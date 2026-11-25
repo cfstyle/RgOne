@@ -319,8 +319,20 @@ class NewApiClient:
             if resp.status_code != 200:
                 raise RuntimeError(f"网关按名称检索 Token 失败: HTTP {resp.status_code}")
             body = resp.json()
-            data = body.get("data")
-            if body.get("success") is not True or not isinstance(data, list):
+            if body.get("success") is not True:
+                raise RuntimeError("网关未返回可确认的 Token 查询结果")
+            raw_data = body.get("data")
+            if isinstance(raw_data, list):
+                data = raw_data
+            elif isinstance(raw_data, dict) and "items" in raw_data:
+                items = raw_data.get("items")
+                if items is None:
+                    data = []
+                elif isinstance(items, list):
+                    data = items
+                else:
+                    raise RuntimeError("网关未返回可确认的 Token 查询结果")
+            else:
                 raise RuntimeError("网关未返回可确认的 Token 查询结果")
             matching = [item for item in data if item.get("name") == name]
             if not matching:
@@ -436,7 +448,10 @@ class NewApiClient:
                     raise RuntimeError(f"网关拉取日志返回业务失败: {res_json.get('message', '未知错误')}")
 
                 data_list = res_json.get("data")
-                if data_list is None:
+                if isinstance(data_list, dict) and "items" in data_list:
+                    items = data_list.get("items")
+                    data_list = [] if items is None else items
+                elif data_list is None:
                     # 某些版本直接返回 items
                     data_list = res_json.get("items", [])
 

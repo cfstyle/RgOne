@@ -4,6 +4,15 @@ if [ -z "${BASH_VERSION:-}" ]; then
 fi
 set -euo pipefail
 
+app_archive="${2:-}"
+if (( $# > 2 )) || { (( $# > 0 )) && [[ "$1" != app ]]; }; then
+    echo "Usage: sh install.sh [app [rgone-app-ARCH.tar.gz]]" >&2
+    exit 2
+fi
+if [[ -n "$app_archive" && "$app_archive" != /* ]]; then
+    app_archive="$PWD/$app_archive"
+fi
+
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 cd -P -- .
 
@@ -12,6 +21,59 @@ compose=(docker compose)
 if ! "${compose[@]}" version >/dev/null 2>&1; then
     compose=(docker-compose)
     "${compose[@]}" version >/dev/null
+fi
+
+start_and_check() {
+    local started_at
+    started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if ! "${compose[@]}" up -d --wait "$@"; then
+        "${compose[@]}" ps -a >&2 || true
+        "${compose[@]}" logs --no-color --since "$started_at" --tail 80 app-release >&2 || true
+        return 1
+    fi
+    "${compose[@]}" exec -T backend python -c '
+from urllib.request import build_opener, ProxyHandler
+
+opener = build_opener(ProxyHandler({}))
+for path in ("/", "/health"):
+    with opener.open("http://nginx" + path, timeout=5) as response:
+        if response.status != 200:
+            raise RuntimeError(f"{path}: HTTP {response.status}")
+'
+}
+
+if [[ "${1:-}" == app ]]; then
+    if [[ ! -f .env || ! -f compose.yaml || ! -f nginx.conf || ! -d data ]]; then
+        echo "An existing RgOne deployment is required. Run sh install.sh with the full offline bundle first." >&2
+        exit 1
+    fi
+    if [[ -z "$app_archive" ]]; then
+        architecture="$(docker info --format '{{.Architecture}}')"
+        case "$architecture" in
+            x86_64|amd64) architecture=amd64 ;;
+            aarch64|arm64) architecture=arm64 ;;
+            *)
+                printf 'Unsupported Docker architecture: %s\n' "$architecture" >&2
+                exit 1
+                ;;
+        esac
+        app_archive="../rgone-app-$architecture.tar.gz"
+    fi
+    if [[ ! -f "$app_archive" ]]; then
+        printf 'Application update package not found: %s\n' "$app_archive" >&2
+        exit 1
+    fi
+    "${compose[@]}" config --quiet
+    stage="$(mktemp -d "$PWD/.rgone-app.XXXXXX")"
+    trap 'if [[ "${stage%/*}" == "$PWD" && "${stage##*/}" == .rgone-app.* ]]; then rm -rf -- "$stage"; fi' EXIT
+    tar --no-same-owner -xzf "$app_archive" -C "$stage" app
+    (cd -- "$stage/app" && sha256sum -c SHA256SUMS)
+    docker image load -i "$stage/app/image.tar"
+    "${compose[@]}" stop backend
+    start_and_check --force-recreate app-release backend
+    echo "RgOne application updated. Published address:"
+    "${compose[@]}" port nginx 80
+    exit 0
 fi
 
 for component in python nginx app; do
@@ -188,21 +250,7 @@ docker run --rm --pull=never --network none --user 0 \
         fi
     fi
 '
-started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-if ! "${compose[@]}" up -d --wait; then
-    "${compose[@]}" ps -a >&2 || true
-    "${compose[@]}" logs --no-color --since "$started_at" --tail 80 app-release >&2 || true
-    exit 1
-fi
-"${compose[@]}" exec -T backend python -c '
-from urllib.request import build_opener, ProxyHandler
-
-opener = build_opener(ProxyHandler({}))
-for path in ("/", "/health"):
-    with opener.open("http://nginx" + path, timeout=5) as response:
-        if response.status != 200:
-            raise RuntimeError(f"{path}: HTTP {response.status}")
-'
+start_and_check
 
 echo "RgOne installed. Published address:"
 "${compose[@]}" port nginx 80

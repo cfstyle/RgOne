@@ -240,7 +240,7 @@ class AuthService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.warning("员工 Key 申领失败 (%s)", type(e).__name__)
+            logger.warning("员工 Key 申领失败 (%s): %s", type(e).__name__, e)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="网关服务异常或签发结果未确认，API Key 申领未完成"

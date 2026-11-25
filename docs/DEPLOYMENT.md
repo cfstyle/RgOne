@@ -43,17 +43,20 @@ SQLite、安装包和图片保存在宿主机 `data/`。迁移旧部署时，停
 
 ### 3. 已部署的环境更新应用
 
-在现有部署目录执行。若服务器使用独立的 Compose 命令，将下方的 `docker compose` 替换为 `docker-compose`。
+把 `rgone-app-amd64.tar.gz` 放在现有 `rgone/` 目录的同一级，然后执行：
 
 ```bash
-tar -xzf ../rgone-app-amd64.tar.gz -C incoming &&
-  (cd incoming/app && sha256sum -c SHA256SUMS) &&
-  docker image load -i incoming/app/image.tar &&
-  docker compose stop backend &&
-  docker compose up -d --force-recreate --wait app-release backend
+sh rgone/install.sh app
 ```
 
-应用更新会切换前端目录并重启后端，沿用现有 `.env`、`data/` 和两个通用镜像。完成后复验首页、`/health` 和已有下载文件。需要回滚时，导入上一个应用包并重复更新步骤。
+脚本根据 Docker 架构选择同级目录中的 `rgone-app-amd64.tar.gz` 或 `rgone-app-arm64.tar.gz`，也可以传入路径，例如 `sh rgone/install.sh app /tmp/rgone-app-amd64.tar.gz`。更新会校验包、发布前端、重启后端并验证首页和健康接口。已有的 `.env`、`data/`、Compose、Nginx 配置和两个通用镜像会继续使用。需要回滚时，把上一版 App 包作为参数再次执行。
+
+如果现有 `install.sh` 来自旧首装包，首次更新时从新版 App 包安装入口脚本，再运行更新。ARM64 用对应文件名：
+
+```bash
+tar -xzf rgone-app-amd64.tar.gz -C rgone --strip-components=1 app/install.sh &&
+sh rgone/install.sh app
+```
 
 若发布修改了部署配置，从新包复制对应配置文件再启动。Nginx 配置有变化时，执行 `docker compose up -d --no-deps --force-recreate --wait nginx` 重新加载。
 

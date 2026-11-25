@@ -404,6 +404,24 @@ def test_gateway_token_search_and_create_distinguish_uncertainty(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
     monkeypatch.setattr(httpx.AsyncClient, "delete", unexpected_delete)
     assert asyncio.run(gateway.get_token_by_name("mock-name")) is None
+    response = httpx.Response(200, json={"success": True, "data": {"items": [], "total": 0, "page": 1, "page_size": 20}})
+    assert asyncio.run(gateway.get_token_by_name("mock-name")) is None
+    response = httpx.Response(200, json={"success": True, "data": {"items": None, "total": 0, "page": 1, "page_size": 20}})
+    assert asyncio.run(gateway.get_token_by_name("mock-name")) is None
+    response = httpx.Response(200, json={
+        "success": True,
+        "data": {
+            "items": [{"id": 7, "name": "mock-name", "key": "sk-paginated-key"}],
+            "total": 1,
+            "page": 1,
+            "page_size": 20,
+        },
+    })
+    assert asyncio.run(gateway.get_token_by_name("mock-name")) == {
+        "id": 7,
+        "name": "mock-name",
+        "key": "sk-paginated-key",
+    }
     response = httpx.Response(200, json={"success": False})
     with pytest.raises(RuntimeError, match="可确认"):
         asyncio.run(gateway.get_token_by_name("mock-name"))

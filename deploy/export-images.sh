@@ -132,6 +132,10 @@ for component in "${components[@]}"; do
             printf '\nRGONE_PYTHON_IMAGE=%s\nRGONE_NGINX_IMAGE=%s\n' "$python_image" "$nginx_image" \
                 >> "$payload/.env.docker.example"
             package_files+=(compose.yaml .env.docker.example nginx.conf DEPLOYMENT.md)
+            if [[ "$mode" == app ]]; then
+                cp -- deploy/install.sh "$payload/"
+                package_files+=(install.sh)
+            fi
             ;;
     esac
     docker image save --output "$payload/image.tar" "$image"

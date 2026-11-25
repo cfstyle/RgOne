@@ -20,6 +20,8 @@ case "$1 $2" in
     'info --format')
         if [[ "$3" == '{{.OSType}}/{{.Architecture}}' ]]; then
             echo linux/x86_64
+        elif [[ "$3" == '{{.Architecture}}' ]]; then
+            echo "${DOCKER_TEST_ARCHITECTURE:-x86_64}"
         fi
         ;;
     'build --build-arg') test "${DOCKER_BUILDKIT:-}" = 0 ;;
@@ -48,6 +50,7 @@ case "$1 $2" in
         sh -ec "$command"
         ;;
     'compose up') test "${DOCKER_TEST_FAIL_UP:-0}" = 0 ;;
+    'compose stop') test "$3" = backend ;;
     'pull --platform'|'buildx build'|'run --rm'|'compose config'|'compose exec'|'compose logs') ;;
     *) exit 1 ;;
 esac
@@ -75,6 +78,11 @@ grep -Fq 'buildx build --platform linux/arm64 --load' docker.log
 test "$(find build -maxdepth 1 -name 'rgone-*.tar.gz' | wc -l)" -eq 1
 tar --no-same-owner -xzf build/rgone-offline-arm64.tar.gz
 cmp deploy/install.sh rgone/install.sh
+if sh rgone/install.sh app > app-preflight.log 2>&1; then
+    echo "App update accepted an uninstalled deployment" >&2
+    exit 1
+fi
+grep -Fq 'An existing RgOne deployment is required.' app-preflight.log
 if DOCKER_TEST_PORT_CONFLICT=1 bash rgone/install.sh </dev/null > preflight.log 2>&1; then
     echo "Installer continued without confirming an alternative port" >&2
     exit 1
@@ -174,6 +182,49 @@ test "$loads" -eq "$(grep -c '^image load ' docker.log)"
 DOCKER_TEST_BUILDX=0 sh deploy/export-images.sh app
 grep -Fxq "build --build-arg PY311_BASE_IMAGE=$RGONE_PYTHON_IMAGE --tag rgone-app:latest ." docker.log
 tar -tzf build/rgone-app-amd64.tar.gz | grep -Fxq app/image.tar
+cp -- build/rgone-app-amd64.tar.gz .
+tar -xzf rgone-app-amd64.tar.gz -C rgone --strip-components=1 app/install.sh
+cmp deploy/install.sh rgone/install.sh
+renamed_archive='build/previous app.tar.gz'
+cp -- rgone-app-amd64.tar.gz "$renamed_archive"
+mkdir -- damaged
+tar -xzf rgone-app-amd64.tar.gz -C damaged
+printf 'damaged update image\n' >> damaged/app/image.tar
+tar -czf damaged.tar.gz -C damaged app
+updates_start="$(wc -l < docker.log)"
+if sh rgone/install.sh app damaged.tar.gz > damaged.log 2>&1; then
+    echo "App update accepted a damaged package" >&2
+    exit 1
+fi
+grep -Fq 'image.tar: FAILED' damaged.log
+tail -n "+$(( updates_start + 1 ))" docker.log > failed-update.log
+if grep -Eq '^(image load|compose (stop|up)) ' failed-update.log; then
+    echo "App update modified the deployment before validating the package" >&2
+    exit 1
+fi
+if DOCKER_TEST_ARCHITECTURE=aarch64 sh rgone/install.sh app > missing.log 2>&1; then
+    echo "App update accepted a missing ARM64 package" >&2
+    exit 1
+fi
+grep -Fq 'Application update package not found: ../rgone-app-arm64.tar.gz' missing.log
+compose_checksum="$(sha256sum rgone/compose.yaml)"
+nginx_checksum="$(sha256sum rgone/nginx.conf)"
+env_checksum="$(sha256sum rgone/.env)"
+updates_start="$(wc -l < docker.log)"
+sh rgone/install.sh app </dev/null > update.log 2>&1
+DOCKER_TEST_COMPOSE_PLUGIN=0 sh rgone/install.sh app "$renamed_archive" </dev/null >> update.log 2>&1
+tail -n "+$(( updates_start + 1 ))" docker.log > docker-update.log
+test "$(grep -c '^image load .*\.rgone-app\..*/app/image.tar$' docker-update.log)" -eq 2
+test "$(grep -c '^image load ' docker-update.log)" -eq 2
+test "$(grep -Fxc 'compose stop backend' docker-update.log)" -eq 2
+test "$(grep -Fxc 'compose up -d --wait --force-recreate app-release backend' docker-update.log)" -eq 2
+test "$(grep -Fc 'compose exec -T backend python -c' docker-update.log)" -eq 2
+grep -Fq 'RgOne application updated.' update.log
+test "$compose_checksum" = "$(sha256sum rgone/compose.yaml)"
+test "$nginx_checksum" = "$(sha256sum rgone/nginx.conf)"
+test "$env_checksum" = "$(sha256sum rgone/.env)"
+grep -Fxq 'existing data' rgone/data/sentinel
+test -z "$(find rgone -maxdepth 1 -name '.rgone-app.*' -print)"
 pulls="$(grep -c '^pull ' docker.log)"
 if DOCKER_TEST_BUILDX=0 bash deploy/export-images.sh all linux/arm64; then
     echo "Legacy builder accepted an unsupported cross-platform build" >&2
