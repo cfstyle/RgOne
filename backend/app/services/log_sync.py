@@ -1,12 +1,15 @@
 from __future__ import annotations
+import json
 import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from hashlib import blake2b
+from tempfile import TemporaryFile
 from typing import Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 from fastapi import HTTPException, status
-from sqlalchemy import func, literal, or_
+from sqlalchemy import func, insert, literal, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from backend.app.core.database import SessionLocal
@@ -22,15 +25,60 @@ UsageRankingDimension = Literal["user", "model"]
 UsageRankingRange = Literal["today", "7d", "30d", "all"]
 SHANGHAI_TIME = timezone(timedelta(hours=8))
 
-# 员工手动同步 30 秒冷却防抖记录 {emp_no: last_sync_time}
-_user_sync_cooldown: Dict[str, float] = {}
-
-
 class LogSyncService:
     """日志增量同步与多维统计聚合引擎"""
 
     _LOCK_KEY = "log_sync_lease"
     _LOCK_DURATION = timedelta(seconds=120)
+    _SOURCE_KEY = "usage_log_source_version"
+    _SOURCE_VERSION = "admin-v1"
+    _PERSONAL_REFRESH_INTERVAL = timedelta(seconds=10)
+
+    @staticmethod
+    def _log_row(item: dict, token_map: dict[str, str], *, real: bool) -> dict:
+        token_name = item.get("token_name", "").strip()
+        emp_no = token_map.get(token_name)
+        if not emp_no:
+            match = re.match(r"^EMP_([a-zA-Z0-9_\-]+)_", token_name)
+            emp_no = match.group(1) if match else "UNKNOWN"
+
+        # ClickHouse log lists also use display IDs. Prefer the request ID
+        # when present and keep real identities outside the old cache's range.
+        request_id = item.get("request_id")
+        if real and request_id:
+            digest = blake2b(request_id.encode("utf-8"), digest_size=8).digest()
+            log_id = -(int.from_bytes(digest, "big") & ((1 << 62) - 1)) - (1 << 62)
+        else:
+            log_id = int(item["id"])
+            if log_id <= 0 or (real and log_id >= 1 << 62):
+                raise ValueError("网关返回的日志标识无效")
+            if real:
+                log_id = -log_id
+
+        return {
+            "new_api_log_id": log_id,
+            "token_name": token_name,
+            "emp_no": emp_no,
+            "model_name": item.get("model_name", "unknown"),
+            "prompt_tokens": item.get("prompt_tokens", 0),
+            "completion_tokens": item.get("completion_tokens", 0),
+            "quota": item.get("quota", 0),
+            "use_time": item.get("use_time", 0),
+            "is_stream": bool(item.get("is_stream", False)),
+            "created_at": int(item["created_at"]),
+        }
+
+    @staticmethod
+    def _store_log_rows(db: Session, rows: list[dict]) -> int:
+        identities = {row["new_api_log_id"]: row for row in rows}
+        existing = db.query(UsageLogCache.new_api_log_id).filter(
+            UsageLogCache.new_api_log_id.in_(list(identities))
+        )
+        for (identity,) in existing:
+            identities.pop(identity)
+        if identities:
+            db.execute(insert(UsageLogCache), list(identities.values()))
+        return len(identities)
 
     @classmethod
     def _acquire_sync_lock(cls, db: Session) -> Optional[str]:
@@ -96,6 +144,7 @@ class LogSyncService:
             close_db_when_done = True
 
         owner = None
+        replay = None
         try:
             owner = cls._acquire_sync_lock(db)
             if owner is None:
@@ -107,12 +156,21 @@ class LogSyncService:
             # 1. 获取上次同步时间戳
             ts_setting = db.query(SystemSetting).filter(SystemSetting.key == "last_log_sync_ts").first()
             last_ts = int(ts_setting.value) if (ts_setting and ts_setting.value) else 0
+            real = not new_api_client.is_mock
+            source = db.get(SystemSetting, cls._SOURCE_KEY) if real else None
+            rebuild = real and (source is None or source.value != cls._SOURCE_VERSION)
+            fetch_options = {}
+            if rebuild:
+                replay = TemporaryFile(mode="w+t", encoding="utf-8")
+                fetch_options["end_timestamp"] = int(time.time()) - 1
+                last_ts = 0
 
             # 2. 从 new-api 分页拉取所有新日志
             page = 1
             page_size = 100
             new_records_count = 0
             max_log_ts = last_ts
+            oldest_log_ts = None
 
             # 构建本地已有的 token 映射缓存 {token_name: emp_no}
             tokens = db.query(UserToken.token_name, UserToken.emp_no).all()
@@ -124,49 +182,29 @@ class LogSyncService:
                 raw_logs = await new_api_client.fetch_consumption_logs(
                     start_timestamp=last_ts,
                     page=page,
-                    page_size=page_size
+                    page_size=page_size,
+                    **fetch_options,
                 )
                 if not raw_logs:
                     break
 
                 cls._require_sync_lock(db, owner)
-                for item in raw_logs:
-                    log_id = item.get("id")
-                    token_name = item.get("token_name", "").strip()
-                    created_at = int(item.get("created_at", 0))
-
-                    if created_at > max_log_ts:
-                        max_log_ts = created_at
-
-                    # 幂等检查：若已存在则跳过
-                    exists = db.query(UsageLogCache.id).filter(UsageLogCache.new_api_log_id == log_id).first()
-                    if exists:
-                        continue
-
-                    # 解析对应工号
-                    emp_no = token_map.get(token_name)
-                    if not emp_no:
-                        # 尝试从命名规范 EMP_{emp_no}_{name} 正则提取
-                        match = re.match(r"^EMP_([a-zA-Z0-9_\-]+)_", token_name)
-                        if match:
-                            emp_no = match.group(1)
-                        else:
-                            emp_no = "UNKNOWN"
-
-                    cache_entry = UsageLogCache(
-                        new_api_log_id=log_id,
-                        token_name=token_name,
-                        emp_no=emp_no,
-                        model_name=item.get("model_name", "unknown"),
-                        prompt_tokens=item.get("prompt_tokens", 0),
-                        completion_tokens=item.get("completion_tokens", 0),
-                        quota=item.get("quota", 0),
-                        use_time=item.get("use_time", 0),
-                        is_stream=bool(item.get("is_stream", False)),
-                        created_at=created_at,
+                timestamps = [int(item["created_at"]) for item in raw_logs]
+                rows = [
+                    cls._log_row(item, token_map, real=real)
+                    for item in raw_logs
+                    if not real or (
+                        item.get("token_name", "").strip() in token_map
+                        and (item.get("user_id") is None or str(item["user_id"]) == str(new_api_client.user_id))
                     )
-                    db.add(cache_entry)
-                    new_records_count += 1
+                ]
+                max_log_ts = max(max_log_ts, max(timestamps))
+                if replay is not None:
+                    page_oldest = min(timestamps)
+                    oldest_log_ts = page_oldest if oldest_log_ts is None else min(oldest_log_ts, page_oldest)
+                    replay.write(json.dumps(rows) + "\n")
+                else:
+                    new_records_count += cls._store_log_rows(db, rows)
 
                 db.commit()
 
@@ -177,7 +215,22 @@ class LogSyncService:
 
             # 3. 整轮分页成功后推进 last_log_sync_ts 游标
             cls._require_sync_lock(db, owner)
-            if max_log_ts > last_ts:
+            if replay is not None:
+                legacy = db.query(UsageLogCache).filter(UsageLogCache.new_api_log_id > 0)
+                if oldest_log_ts is not None:
+                    # Retain cache entries older than the history still available from the gateway.
+                    legacy.filter(UsageLogCache.created_at >= oldest_log_ts).delete(synchronize_session=False)
+                    replay.seek(0)
+                    for batch in replay:
+                        new_records_count += cls._store_log_rows(db, json.loads(batch))
+                elif legacy.first():
+                    raise RuntimeError("网关未返回消费日志，已保留原用量缓存")
+                if source is None:
+                    source = SystemSetting(key=cls._SOURCE_KEY)
+                    db.add(source)
+                source.value = cls._SOURCE_VERSION
+
+            if rebuild or max_log_ts > last_ts:
                 if not ts_setting:
                     ts_setting = SystemSetting(key="last_log_sync_ts")
                     db.add(ts_setting)
@@ -209,6 +262,8 @@ class LogSyncService:
             raise RuntimeError(f"增量同步消费日志失败: {err_msg}") from e
         finally:
             db.rollback()
+            if replay is not None:
+                replay.close()
             if owner is not None:
                 cls._release_sync_lock(db, owner)
             if close_db_when_done:
@@ -217,7 +272,7 @@ class LogSyncService:
     @classmethod
     def _record_sync_result(cls, db: Session, success: bool, message: str):
         """记录最近一次网关增量同步的结果与时间"""
-        now_iso = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now_iso = datetime.now(SHANGHAI_TIME).strftime("%Y-%m-%d %H:%M:%S")
         records = [
             ("last_sync_status", "success" if success else "failed"),
             ("last_sync_time", now_iso),
@@ -239,8 +294,60 @@ class LogSyncService:
         rec = db.query(SystemSetting).filter(SystemSetting.key == "last_successful_sync_time").first()
         if rec and rec.value:
             return rec.value
-        rec_any = db.query(SystemSetting).filter(SystemSetting.key == "last_sync_time").first()
-        return rec_any.value if rec_any and rec_any.value else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return ""
+
+    @classmethod
+    async def refresh_employee_usage(cls, db: Session, emp_no: str) -> tuple[str, str]:
+        def cached(message: str) -> tuple[str, str]:
+            return message, cls.get_last_successful_sync_time(db)
+
+        if new_api_client.is_mock:
+            return cached("已刷新本地用量")
+        token = db.query(UserToken.token_name, UserToken.new_api_token_id).filter_by(emp_no=emp_no).first()
+        if not token or not token.new_api_token_id:
+            return cached("尚未领取个人令牌")
+        owner = cls._acquire_sync_lock(db)
+        if owner is None:
+            return cached("网关日志正在同步，已显示当前用量")
+        try:
+            legacy = db.query(UsageLogCache.id).filter(UsageLogCache.new_api_log_id > 0)
+            if db.get(SystemSetting, cls._SOURCE_KEY) is None and legacy.first():
+                return cached("历史用量待回补，已显示当前数据")
+
+            refresh_key = "usage_refresh_" + blake2b(emp_no.encode("utf-8"), digest_size=16).hexdigest()
+            now = datetime.utcnow()
+            attempt = db.get(SystemSetting, refresh_key)
+            if attempt and now - attempt.updated_at < cls._PERSONAL_REFRESH_INTERVAL:
+                return cached("已显示当前用量，请稍后再同步")
+            if attempt is None:
+                attempt = SystemSetting(key=refresh_key)
+                db.add(attempt)
+            attempt.updated_at = now
+            db.commit()
+
+            token_name, token_id = token
+            raw_logs = await new_api_client.fetch_consumption_logs(
+                start_timestamp=int(time.time()) - 86400, token_name=token_name
+            )
+            cls._require_sync_lock(db, owner)
+            rows = [
+                cls._log_row(item, {token_name: emp_no}, real=True)
+                for item in raw_logs
+                if item.get("token_name") == token_name
+                and str(item.get("token_id")) == str(token_id)
+            ]
+            cls._store_log_rows(db, rows)
+            db.commit()
+            sync_time = datetime.now(SHANGHAI_TIME).strftime("%Y-%m-%d %H:%M:%S")
+            return "已同步个人近期用量", sync_time
+        except HTTPException:
+            raise
+        except Exception as error:
+            logger.warning("同步个人用量失败: %s", error)
+            raise HTTPException(status_code=502, detail="网关用量同步失败，请稍后重试") from error
+        finally:
+            db.rollback()
+            cls._release_sync_lock(db, owner)
 
     @classmethod
     async def trigger_admin_sync(cls, db: Session) -> Tuple[bool, str, int]:
@@ -262,18 +369,18 @@ class LogSyncService:
         """
         全行部门用量排行聚合：按部门统计 Token 消耗总数、调用频次与员工人数
         """
-        # 联合查询 employees 与 usage_logs_cache
+        total_tokens = func.coalesce(func.sum(UsageLogCache.prompt_tokens + UsageLogCache.completion_tokens), 0)
         query = (
             db.query(
                 Employee.department,
-                func.coalesce(func.sum(UsageLogCache.quota), 0).label("total_tokens"),
+                total_tokens.label("total_tokens"),
                 func.coalesce(func.count(UsageLogCache.id), 0).label("request_count"),
                 func.coalesce(func.count(func.distinct(Employee.emp_no)), 0).label("active_employees"),
             )
             .outerjoin(UsageLogCache, Employee.emp_no == UsageLogCache.emp_no)
             .filter(Employee.is_active.is_(True))
             .group_by(Employee.department)
-            .order_by(func.coalesce(func.sum(UsageLogCache.quota), 0).desc())
+            .order_by(total_tokens.desc())
             .all()
         )
 

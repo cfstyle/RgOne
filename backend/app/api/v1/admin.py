@@ -52,7 +52,9 @@ def get_admin_overview(
 
     # 全行累计 Token
     from sqlalchemy import func
-    total_tokens_row = db.query(func.coalesce(func.sum(UsageLogCache.quota), 0)).scalar()
+    total_tokens_row = db.query(
+        func.coalesce(func.sum(UsageLogCache.prompt_tokens + UsageLogCache.completion_tokens), 0)
+    ).scalar()
     total_tokens = int(total_tokens_row or 0)
 
     # 部门排行

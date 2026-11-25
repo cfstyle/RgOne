@@ -9,6 +9,12 @@ from backend.app.core.config import settings
 
 logger = logging.getLogger("new_api_client")
 
+VISION_MODEL_IDS = {
+    "DEEPSEEK-V4-FLASH-0731-INT8",
+    "QWEN3.7-PLUS-VL-THINKING-INT8",
+    "QWEN3.8-27B-BF16",
+}
+
 
 class TokenCreationRejected(RuntimeError):
     """网关明确拒绝签发；调用方可安全重试。"""
@@ -35,6 +41,7 @@ class NewApiClient:
         # 内存缓存：模型列表缓存 (60秒过期)
         self._models_cache: Optional[List[Dict[str, Any]]] = None
         self._models_cache_time: float = 0
+        self._models_cache_scope: Optional[tuple[str, int, bool]] = None
 
         # Mock 模式内部状态存储
         self._mock_tokens: Dict[int, Dict[str, Any]] = {}
@@ -157,17 +164,22 @@ class NewApiClient:
         标准响应项包含 id, name, modalities (text, image), context_window 等能力标注
         """
         now = time.time()
-        if not force_refresh and self._models_cache and (now - self._models_cache_time < 60):
+        is_mock = self.is_mock
+        scope = (self.base_url, self.user_id, is_mock)
+        if self._models_cache_scope != scope:
+            self._models_cache = None
+            self._models_cache_scope = scope
+        if not force_refresh and self._models_cache is not None and (now - self._models_cache_time < 60):
             return self._models_cache
 
-        if self.is_mock:
+        if is_mock:
             mock_models = [
                 {
                     "id": "DeepSeek-V4-Flash-0731-INT8",
                     "object": "model",
                     "owned_by": "deepseek",
                     "display_name": "DeepSeek V4 Flash (低延迟快速推断)",
-                    "input": ["text"],
+                    "input": ["text", "image"],
                     "context_length": 65536,
                     "is_recommended": True,
                     "description": "行内自部署主力低延迟推理模型，适合日常问答、代码辅助与长文本总结",
@@ -177,7 +189,7 @@ class NewApiClient:
                     "object": "model",
                     "owned_by": "qwen",
                     "display_name": "Qwen 3.8 27B 高精度旗舰",
-                    "input": ["text"],
+                    "input": ["text", "image"],
                     "context_length": 32768,
                     "is_recommended": True,
                     "description": "通用综合能力优秀，具备极高的金融与中文语义理解水平",
@@ -207,36 +219,57 @@ class NewApiClient:
             self._models_cache_time = now
             return mock_models
 
-        url = f"{self.base_url}/v1/models"
+        if self._configuration_error():
+            return []
+
+        url = f"{self.base_url}/api/user/models"
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
                 resp = await client.get(url, headers=self._headers())
-                if resp.status_code == 200:
-                    raw_data = resp.json().get("data", [])
-                    processed = []
-                    for m in raw_data:
-                        mid = m.get("id", "")
-                        # 智能多模态识别：若模型名含 VL / Vision / Multi，标注包含 image
-                        is_vl = any(k in mid.upper() for k in ("VL", "VISION", "MULTIMODAL", "IMAGE", "4O"))
-                        processed.append({
-                            "id": mid,
-                            "object": "model",
-                            "owned_by": m.get("owned_by", "new-api"),
-                            "display_name": mid,
-                            "input": ["text", "image"] if is_vl else ["text"],
-                            "context_length": 32768,
-                            "is_recommended": "DEEPSEEK" in mid.upper() or "QWEN" in mid.upper(),
-                            "description": "行内大模型网关提供",
-                        })
-                    self._models_cache = processed
-                    self._models_cache_time = now
-                    return processed
+                resp.raise_for_status()
+                result = resp.json()
+                raw_data = result.get("data") if isinstance(result, dict) and result.get("success") is not False else None
+                if not isinstance(raw_data, list):
+                    raise ValueError("网关模型目录响应格式异常")
+
+                processed = {}
+                for entry in raw_data:
+                    model = {"id": entry} if isinstance(entry, str) else entry
+                    if not isinstance(model, dict):
+                        continue
+                    mid = model.get("id")
+                    if not isinstance(mid, str) or not mid.strip():
+                        continue
+                    mid = mid.strip()
+                    model_id = mid.upper()
+                    inputs = model.get("input")
+                    if model_id in VISION_MODEL_IDS:
+                        supports_image = True
+                    elif isinstance(inputs, list) and inputs:
+                        supports_image = "image" in inputs
+                    else:
+                        supports_image = any(
+                            marker in model_id for marker in ("VL", "VISION", "MULTIMODAL", "IMAGE", "4O")
+                        )
+                    processed[mid] = {
+                        "id": mid,
+                        "object": "model",
+                        "owned_by": model.get("owned_by", "new-api"),
+                        "display_name": mid,
+                        "input": ["text", "image"] if supports_image else ["text"],
+                        "context_length": model.get("context_length"),
+                        "is_recommended": "DEEPSEEK" in model_id or "QWEN" in model_id,
+                        "description": "行内大模型网关提供",
+                    }
         except Exception as e:
             logger.warning(f"拉取模型列表失败: {e}")
-            if self._models_cache:
-                return self._models_cache
+            return self._models_cache or []
 
-        return []
+        models = list(processed.values())
+        if self._models_cache_scope == scope:
+            self._models_cache = models
+            self._models_cache_time = now
+        return models
 
     async def create_token(self, name: str) -> Dict[str, Any]:
         """
@@ -268,7 +301,7 @@ class NewApiClient:
             "unlimited_quota": True,
             "remain_quota": 0,
             "model_limits_enabled": False,
-            "group": "",
+            "group": "default",
         }
 
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -412,7 +445,10 @@ class NewApiClient:
         self,
         start_timestamp: int,
         page: int = 1,
-        page_size: int = 100
+        page_size: int = 100,
+        *,
+        token_name: Optional[str] = None,
+        end_timestamp: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         拉取消费日志 (type=2)，严格区分正常空页、请求失败与响应结构异常
@@ -423,18 +459,22 @@ class NewApiClient:
         if configuration_error:
             raise RuntimeError(configuration_error)
 
-        url = f"{self.base_url}/api/log/self"
+        url = f"{self.base_url}/api/log/"
         params = {
             "p": page,
             "page_size": page_size,
             "type": 2,
             "start_timestamp": start_timestamp,
         }
+        if token_name is not None:
+            params["token_name"] = token_name
+        if end_timestamp is not None:
+            params["end_timestamp"] = end_timestamp
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, params=params, headers=self._headers())
                 if resp.status_code != 200:
-                    raise RuntimeError(f"网关拉取日志失败: HTTP {resp.status_code} {resp.text}")
+                    raise RuntimeError(f"网关拉取日志失败: HTTP {resp.status_code}")
 
                 content_type = resp.headers.get("content-type", "")
                 if "application/json" not in content_type:

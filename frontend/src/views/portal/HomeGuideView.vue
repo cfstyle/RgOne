@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import {
   Download,
   KeyRound,
@@ -15,27 +15,22 @@ import {
   EyeOff,
   RotateCcw,
   AlertTriangle,
+  BookOpen,
   UserCheck,
 } from 'lucide-vue-next'
 import { api } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import LoginModal from '@/components/LoginModal.vue'
 import { copyToClipboard } from '@/utils/clipboard'
+import { useEmployeeToken } from '@/composables/useEmployeeToken'
 
 export interface ModelItem {
   id: string
   display_name: string
   input: string[]
-  context_length: number
+  context_length?: number | null
   is_recommended: boolean
   description: string
-}
-
-export interface GatewayStatus {
-  success?: boolean
-  gateway_connected?: boolean
-  is_mock?: boolean
-  message?: string
 }
 
 export interface InstallerData {
@@ -48,92 +43,61 @@ export interface InstallerData {
   download_url: string
 }
 
-export interface UserTokenDetail {
-  emp_no: string
-  name: string
-  department: string
-  token_name: string
-  api_key: string
-  masked_key: string
-  base_url: string
-  provider_id: string
-  provider_name: string
-  api_protocol: string
-  default_model: string
-  status?: string
-  reset_count: number
-  created_at: string
-}
-
 const authStore = useAuthStore()
 
 const showLoginModal = ref(false)
 const activeConfigTab = ref<'gui' | 'patch'>('gui')
 const showPlainKey = ref(false)
-const isClaiming = ref(false)
+const {
+  detail: myTokenDetail,
+  loading: loadingKey,
+  failure: keyFailure,
+  claiming: isClaiming,
+  reload: reloadKey,
+  claim: claimKey,
+} = useEmployeeToken()
 
 // 模型清单与主推安装包
 const models = ref<ModelItem[]>([])
-const gatewayStatus = ref<GatewayStatus>({})
 const installer = ref<InstallerData | null>(null)
-const myTokenDetail = ref<UserTokenDetail | null>(null)
 
 // 复制状态记录
 const copiedField = ref<string>('')
+let copyFeedback: ReturnType<typeof setTimeout> | undefined
 
 async function copyText(text: string, fieldKey: string) {
   if (!text) return
+  const employeeSession = authStore.empToken
   const ok = await copyToClipboard(text)
-  if (ok) {
+  if (ok && authStore.empToken === employeeSession) {
+    clearTimeout(copyFeedback)
     copiedField.value = fieldKey
-    setTimeout(() => {
+    copyFeedback = setTimeout(() => {
       copiedField.value = ''
     }, 2000)
   }
 }
 
 async function loadPortalData() {
-  try {
-    const [mRes, sRes, instRes] = await Promise.all([
-      api.getModels() as Promise<{ data?: ModelItem[] }>,
-      api.getGatewayStatus() as Promise<GatewayStatus>,
-      api.getRecommendedInstaller() as Promise<{ has_installer?: boolean; data?: InstallerData }>,
-    ])
-    models.value = mRes.data || []
-    gatewayStatus.value = sRes
-    if (instRes.has_installer && instRes.data) {
-      installer.value = instRes.data
-    }
-  } catch (e) {
-    console.error('加载网关公共数据失败', e)
+  const [catalog, recommended] = await Promise.allSettled([
+    api.getModels() as Promise<{ data?: ModelItem[] }>,
+    api.getRecommendedInstaller() as Promise<{ has_installer?: boolean; data?: InstallerData }>,
+  ])
+  if (catalog.status === 'fulfilled' && Array.isArray(catalog.value.data)) {
+    models.value = catalog.value.data
   }
-
-  // 若已登录，拉取专属配置与明文 Key
-  if (authStore.isEmployeeLoggedIn) {
-    try {
-      myTokenDetail.value = (await api.getMyToken()) as UserTokenDetail
-    } catch (e) {
-      console.warn('获取用户 Token 异常', e)
-    }
+  if (recommended.status === 'fulfilled' && recommended.value.has_installer && recommended.value.data) {
+    installer.value = recommended.value.data
   }
 }
 
-function handleVerifySuccess() {
-  loadPortalData()
-}
+watch(() => authStore.empToken, () => {
+  showPlainKey.value = false
+  copiedField.value = ''
+  clearTimeout(copyFeedback)
+})
 
-async function handleClaimKey() {
-  if (isClaiming.value) return
-  isClaiming.value = true
-  try {
-    myTokenDetail.value = (await api.claimMyToken()) as UserTokenDetail
-  } catch (err: unknown) {
-    const errObj = err as { message?: string }
-    alert(errObj.message || '申领 Key 失败，请检查算力网关状态后重试')
-  } finally {
-    isClaiming.value = false
-  }
-}
+onBeforeUnmount(() => clearTimeout(copyFeedback))
 
 onMounted(() => {
   loadPortalData()
@@ -142,18 +106,7 @@ onMounted(() => {
 
 <template>
   <div class="home-guide-view">
-    <!-- 顶部状态与模型能力展示（无多余外大框） -->
-    <section class="models-overview-section">
-      <div class="status-top-row">
-        <div class="gateway-status-pill">
-          <span class="status-dot" />
-          <span>算力网关就绪 · 已接入 {{ models.length }} 款内网大模型</span>
-        </div>
-        <span class="status-desc-text">
-          纯内网离线专线提供 · 支持深度推理、代码补全与图文多模态
-        </span>
-      </div>
-
+    <section v-if="models.length" aria-label="网关可用模型">
       <!-- 模型纯白浮雕卡片平铺 -->
       <div class="models-grid">
         <div
@@ -171,7 +124,7 @@ onMounted(() => {
               <component :is="inp === 'image' ? ImageIcon : MessageSquare" :size="12" />
               <span>{{ inp === 'image' ? '多模态 (图文)' : '纯文本' }}</span>
             </span>
-            <span class="m-tag-pill">{{ Math.round((m.context_length || 32768) / 1024) }}k 上下文</span>
+            <span v-if="m.context_length" class="m-tag-pill">{{ Math.round(m.context_length / 1024) }}k 上下文</span>
           </div>
         </div>
       </div>
@@ -262,7 +215,7 @@ onMounted(() => {
                   type="button"
                   class="copy-pill-btn primary md-state-layer"
                   :disabled="isClaiming"
-                  @click="handleClaimKey"
+                  @click="claimKey"
                 >
                   <RotateCcw :size="14" :class="{ 'spin-icon': isClaiming }" />
                   <span>{{ isClaiming ? '正在申领...' : '重新申领' }}</span>
@@ -292,6 +245,21 @@ onMounted(() => {
                   <span>{{ copiedField === 'step2_key' ? '已复制' : '复制 Key' }}</span>
                 </button>
               </div>
+              <p v-if="keyFailure" class="step-text" role="status">{{ keyFailure }}</p>
+            </div>
+            <div v-else-if="authStore.isEmployeeLoggedIn" class="verify-trigger-strip">
+              <span class="trigger-intro" role="status">
+                {{ loadingKey ? '正在读取专属 Key…' : keyFailure || '专属 Key 尚未读取' }}
+              </span>
+              <button
+                v-if="!loadingKey"
+                type="button"
+                class="trigger-action-btn md-state-layer"
+                @click="reloadKey"
+              >
+                <RotateCcw :size="15" />
+                <span>重试读取</span>
+              </button>
             </div>
             <div v-else class="verify-trigger-strip">
               <span class="trigger-intro">尚未登录工号，点击右侧工号登录即刻获取专属 API Key</span>
@@ -308,7 +276,7 @@ onMounted(() => {
         </div>
 
         <!-- Step 3: 配置客户端（双轨模式 Tab） -->
-        <div class="step-card studio-elevated-card">
+        <div id="harness-config" class="step-card studio-elevated-card">
           <div class="step-badge-col">
             <div class="step-num-badge">3</div>
           </div>
@@ -317,6 +285,10 @@ onMounted(() => {
               <h3 class="step-heading">配置客户端（推荐粘贴或一键补丁）</h3>
               <span class="step-sub">对齐 DeepSeek Harness 自定义模型 API 字段</span>
             </div>
+            <RouterLink :to="{ name: 'harness-guide', hash: '#step-1' }" class="guide-link md-state-layer">
+              <BookOpen :size="16" />
+              <span>查看 12 步图文操作手册</span>
+            </RouterLink>
 
             <!-- Tab 切换器 -->
             <div class="config-tabs-nav">
@@ -419,16 +391,6 @@ onMounted(() => {
                   </div>
                   <div class="f-value-box">
                     <code class="field-code">OpenAI Chat Completions</code>
-                    <button
-                      type="button"
-                      class="f-copy-btn md-state-layer"
-                      :class="{ copied: copiedField === 'f_proto' }"
-                      @click="copyText('OpenAI Chat Completions', 'f_proto')"
-                    >
-                      <Check v-if="copiedField === 'f_proto'" :size="13" />
-                      <Copy v-else :size="13" />
-                      <span>{{ copiedField === 'f_proto' ? '已复制' : '复制' }}</span>
-                    </button>
                   </div>
                 </div>
 
@@ -447,7 +409,9 @@ onMounted(() => {
                             : showPlainKey
                               ? myTokenDetail.api_key
                               : (myTokenDetail.masked_key || 'sk-••••••••')
-                          : '请先登录工号获取专属 Key'
+                          : authStore.isEmployeeLoggedIn
+                            ? loadingKey ? '正在读取专属 Key…' : keyFailure || '专属 Key 尚未读取'
+                            : '请先登录工号获取专属 Key'
                       }}
                     </code>
                     <template v-if="myTokenDetail">
@@ -456,7 +420,7 @@ onMounted(() => {
                         type="button"
                         class="f-copy-btn primary md-state-layer"
                         :disabled="isClaiming"
-                        @click="handleClaimKey"
+                        @click="claimKey"
                       >
                         <RotateCcw :size="13" :class="{ 'spin-icon': isClaiming }" />
                         <span>{{ isClaiming ? '申领中...' : '重新申领' }}</span>
@@ -484,12 +448,20 @@ onMounted(() => {
                       </template>
                     </template>
                     <button
-                      v-else
+                      v-else-if="!authStore.isEmployeeLoggedIn"
                       type="button"
                       class="f-copy-btn primary md-state-layer"
                       @click="showLoginModal = true"
                     >
                       <span>工号登录获取 Key</span>
+                    </button>
+                    <button
+                      v-else-if="!loadingKey"
+                      type="button"
+                      class="f-copy-btn md-state-layer"
+                      @click="reloadKey"
+                    >
+                      <span>重试读取</span>
                     </button>
                   </div>
                 </div>
@@ -498,15 +470,26 @@ onMounted(() => {
               <div class="model-refresh-hint">
                 <Info :size="16" />
                 <span>
-                  <strong>温馨提示：</strong> 配置保存后，在客户端「编辑 → 刷新模型目录」即可直接拉取全量模型。后续后台新增模型时，只需再次点击刷新即可生效，无需重新配置！
+                  <strong>首次创建提供商前必须添加模型。</strong>
+                  填好地址和 Key 后，点「获取可用模型」，勾选模型并点「添加所选」，再点「创建提供商」。
                 </span>
+              </div>
+              <div class="guide-links">
+                <RouterLink :to="{ name: 'harness-guide', hash: '#step-5' }" class="guide-link md-state-layer">
+                  <BookOpen :size="16" />
+                  <span>按图获取模型并保存</span>
+                </RouterLink>
+                <RouterLink :to="{ name: 'harness-guide', hash: '#step-10' }" class="guide-link md-state-layer">
+                  <ImageIcon :size="16" />
+                  <span>按图开启图片输入</span>
+                </RouterLink>
               </div>
             </div>
 
             <!-- Tab 2: Patch 覆盖配置 -->
             <div v-else class="tab-pane">
               <p class="tab-instruction">
-                通过预置好的 <code>cordis.patch.yml</code>，系统已自动帮您<strong>关闭内网遥测打点</strong>，并预置全量模型映射表：
+                补丁已配置网关和模型目录，为支持图文的模型启用图片输入，并关闭 DeepSeek 会话日志上传。
               </p>
 
               <div class="patch-steps-guide">
@@ -527,7 +510,7 @@ onMounted(() => {
                   <span class="p-num-badge">2</span>
                   <div class="p-desc-content">
                     <strong>覆盖客户端配置文件：</strong>
-                    点击 DeepSeek Harness 客户端右上角「打开配置文件」，将下载的 <code>cordis.patch.yml</code> 粘贴覆盖至该目录。
+                    在「设置」右上角点「打开配置文件」。备份原有配置后，将下载的 <code>cordis.patch.yml</code> 覆盖至该目录。
                   </div>
                 </div>
 
@@ -535,7 +518,7 @@ onMounted(() => {
                   <span class="p-num-badge">3</span>
                   <div class="p-desc-content">
                     <strong>重启客户端填入 Key：</strong>
-                    重启客户端，进入「设置 → 模型」，填入您在第 2 步获取的专属 API Key 即可全功能畅享。
+                    重启客户端，进入「设置 → 模型」，在行内提供商中填入第 2 步获取的专属 API Key 并保存。
                   </div>
                 </div>
               </div>
@@ -546,54 +529,34 @@ onMounted(() => {
     </section>
 
     <!-- 弹窗 -->
-    <LoginModal v-model="showLoginModal" @success="handleVerifySuccess" />
+    <LoginModal v-model="showLoginModal" />
   </div>
 </template>
 
 <style scoped>
+.guide-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.guide-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--md-sys-shape-corner-full);
+  color: var(--md-sys-color-primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .home-guide-view {
   display: flex;
   flex-direction: column;
   gap: 36px;
-}
-
-/* 顶部状态与模型能力展示 */
-.models-overview-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.status-top-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.gateway-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
-  border-radius: var(--md-sys-shape-corner-full);
-  background-color: var(--sys-status-success-bg, #E6F4EA);
-  color: var(--sys-status-success-text, #137333);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: var(--sys-status-success-text, #137333);
-}
-
-.status-desc-text {
-  font-size: 13px;
-  color: var(--md-sys-color-on-surface-variant);
 }
 
 .models-grid {

@@ -75,18 +75,14 @@ def get_usage_logs(
 
 
 @router.post("/sync", summary="员工主动刷新个人用量数据")
-def trigger_sync(
+async def trigger_sync(
     current_user: Employee = Depends(get_current_employee),
     db: Session = Depends(get_db)
 ):
-    """
-    员工工作台刷新：仅重新聚合当前员工本地用量，绝不拉取全行网关，防止雪崩；
-    返回系统最近一次成功同步时间与更新频率
-    """
-    last_sync_time = LogSyncService.get_last_successful_sync_time(db)
+    message, last_sync_time = await LogSyncService.refresh_employee_usage(db, current_user.emp_no)
     return {
         "success": True,
-        "message": "个人用量看板已刷新",
+        "message": message,
         "last_successful_sync_time": last_sync_time,
         "sync_frequency": "后台每 5 分钟自动增量同步",
     }

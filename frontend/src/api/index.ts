@@ -13,6 +13,23 @@ export interface ApiResult<T = unknown> {
 export type UsageRankingDimension = 'user' | 'model'
 export type UsageRankingRange = 'today' | '7d' | '30d' | 'all'
 
+export interface EmployeeTokenDetail {
+  emp_no: string
+  name: string
+  department: string
+  token_name: string
+  api_key: string
+  masked_key: string
+  base_url: string
+  provider_id: string
+  provider_name: string
+  api_protocol: string
+  default_model: string
+  status: string
+  reset_count: number
+  created_at: string
+}
+
 function getEmployeeToken(): string {
   return localStorage.getItem('rgone_emp_token') || ''
 }
@@ -89,9 +106,9 @@ export const api = {
     }),
 
   // 我的工作台
-  getMyToken: () => request('/me/token'),
-  claimMyToken: () => request('/me/token/claim', { method: 'POST' }),
-  resetMyToken: () => request('/me/token/reset', { method: 'POST' }),
+  getMyToken: (signal?: AbortSignal) => request<EmployeeTokenDetail>('/me/token', { signal }),
+  claimMyToken: (signal?: AbortSignal) => request<EmployeeTokenDetail>('/me/token/claim', { method: 'POST', signal }),
+  resetMyToken: (signal?: AbortSignal) => request<EmployeeTokenDetail>('/me/token/reset', { method: 'POST', signal }),
 
   // 极细用量看板
   getUsageOverview: (range: string = '7d') => request(`/me/usage/overview?range=${range}`),

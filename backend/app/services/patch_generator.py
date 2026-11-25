@@ -46,49 +46,53 @@ class PatchGenerator:
                 "id": mid,
                 "name": mid,
                 "input": inputs,
-                "contextLength": m.get("context_length", 32768),
             })
 
-        # 构造完整 patch 字典
-        patch_structure = {
-            "version": "1.0",
-            "plugins": {
-                "@deepseek-ai/dsh-session-log-deepseek": {
-                    "enabled": False,
-                    "comment": "关闭内网遥测与外网打点上报"
-                },
-                "@deepseek-ai/dsh-llm-pi-ai": {
-                    "enabled": True,
-                    "config": {
-                        "providers": {
-                            provider_id: {
-                                "displayName": provider_name,
-                                "apiKeyEnv": api_key_env,
-                                "api": "openai-completions",
-                                "baseURL": base_url,
-                                "models": formatted_models
-                            }
+        patch_structure = [
+            {
+                "id": "session-log-deepseek",
+                "name": "@deepseek-ai/dsh-session-log-deepseek",
+                "config": {"enabled": False},
+            },
+            {
+                "id": "llm-pi-ai",
+                "name": "@deepseek-ai/dsh-llm-pi-ai",
+                "config": {
+                    "providers": {
+                        provider_id: {
+                            "displayName": provider_name,
+                            "apiKeyEnv": api_key_env,
+                            "api": "openai-completions",
+                            "baseURL": base_url,
+                            "models": formatted_models,
                         }
                     }
                 },
-                "@deepseek-ai/dsh-ui-chat": {
-                    "enabled": True,
-                    "config": {
-                        "defaultModel": f"{provider_id}/{default_model}"
-                    }
+            },
+            {
+                "id": "ui-chat",
+                "name": "@deepseek-ai/dsh-client-ui-chat",
+                "config": {"transcriptView": "standard", "performanceUsage": "detailed"},
+            },
+            {
+                "id": "ui-settings",
+                "name": "@deepseek-ai/dsh-client-ui-settings",
+                "config": {"enabled": True},
+            },
+        ]
+        model_ids = [model["id"] for model in formatted_models]
+        if model_ids:
+            patch_structure.append({
+                "id": "agent-default-model",
+                "name": "@deepseek-ai/dsh-agent-default-model",
+                "config": {
+                    "provider": provider_id,
+                    "model": default_model if default_model in model_ids else model_ids[0],
                 },
-                "@deepseek-ai/dsh-agent-default-model": {
-                    "enabled": True,
-                    "config": {
-                        "provider": provider_id,
-                        "model": default_model
-                    }
-                }
-            }
-        }
+            })
 
         # 序列化为规范 YAML
-        yaml_content = yaml.dump(
+        yaml_content = yaml.safe_dump(
             patch_structure,
             allow_unicode=True,
             default_flow_style=False,
@@ -97,9 +101,8 @@ class PatchGenerator:
 
         header_comment = (
             "# =====================================================================\n"
-            "# DeepSeek Harness 官方内网配置补丁文件 (cordis.patch.yml)\n"
+            "# DeepSeek Harness 内网配置补丁文件 (cordis.patch.yml)\n"
             "# 适用网关: 行内统一大模型平台 (new-api)\n"
-            f"# 生成时间: {yaml.__name__}\n"
             "# 使用方式:\n"
             "# 1. 客户端右上角点击「打开配置文件」所在目录；\n"
             "# 2. 将本文件覆盖同名 cordis.patch.yml；\n"

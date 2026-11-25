@@ -17,9 +17,14 @@ sys.path.insert(0, str(BASE_DIR))
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from backend.app.api.v1.admin import get_admin_overview
 from backend.app.core.config import settings
+from backend.app.core.database import Base
 from backend.app.core.security import create_access_token, decrypt_secret
 from backend.app.main import app
+from backend.app.models.admin_user import AdminUser
 from backend.app.models.employee import Employee
 from backend.app.models.token import UserToken
 from backend.app.models.verification_code import VerificationCode
@@ -151,6 +156,8 @@ def test_verification_code_security_and_login(client: TestClient, db_session, mo
         VerificationCode.is_used == False
     ).first()
     assert code_record is not None
+    assert last_msg.splitlines()[0] == f"时间: {code_record.sent_at + timedelta(hours=8):%Y-%m-%d %H:%M:%S}"
+    assert code_record.expire_at - code_record.sent_at == timedelta(minutes=5)
     code_record.expire_at = datetime.utcnow() - timedelta(minutes=10)
     db_session.commit()
 
@@ -395,6 +402,7 @@ def test_gateway_token_search_and_create_distinguish_uncertainty(monkeypatch):
         return response
 
     async def fake_post(*args, **kwargs):
+        assert kwargs["json"]["group"] == "default"
         raise post_error("mock timeout")
 
     async def unexpected_delete(*args, **kwargs):
@@ -973,15 +981,45 @@ def test_incremental_log_sync_and_admin_security(client: TestClient, db_session)
     new_api_client.fetch_consumption_logs = original_fetch
 
 
-def test_cordis_patch_generation(client: TestClient):
-    """测试客户端 patch.yml 生成格式规范"""
-    r = client.get("/api/v1/guide/cordis-patch-yml")
-    assert r.status_code == 200
-    content = r.text
-    assert "@deepseek-ai/dsh-session-log-deepseek" in content
-    assert "enabled: false" in content
-    assert "new-api-1" in content
-    assert "DeepSeek-V4-Flash-0731-INT8" in content
+def test_gateway_catalog_and_cordis_patch(client: TestClient, monkeypatch):
+    import httpx
+    import yaml
+
+    vision_models = ["DeepSeek-V4-Flash-0731-INT8", "Qwen3.7-Plus-VL-Thinking-INT8", "Qwen3.8-27B-BF16"]
+    gateway = NewApiClient(
+        base_url="https://gateway.example.test", access_token="fixture", user_id=4, mock=False,
+    )
+    calls = []
+
+    async def fake_get(_client, url, *, headers):
+        assert url == "https://gateway.example.test/api/user/models"
+        assert headers["New-Api-User"] == "4"
+        calls.append(url)
+        return httpx.Response(200, request=httpx.Request("GET", url), json={
+            "success": True, "data": [*vision_models, "glm-5", "glm-5"],
+        })
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    monkeypatch.setattr("backend.app.api.v1.guide.new_api_client", gateway)
+    monkeypatch.setattr("backend.app.services.patch_generator.new_api_client", gateway)
+
+    catalog = client.get("/api/v1/guide/models").json()
+    assert catalog["total"] == 4
+    assert [model["id"] for model in catalog["data"]] == [*vision_models, "glm-5"]
+    response = client.get("/api/v1/guide/cordis-patch-yml")
+    assert response.status_code == 200
+    assert len(calls) == 1
+    plugins = {entry["id"]: entry for entry in yaml.safe_load(response.text)}
+    assert plugins["session-log-deepseek"]["config"] == {"enabled": False}
+    assert plugins["ui-chat"]["name"] == "@deepseek-ai/dsh-client-ui-chat"
+    provider_id = plugins["agent-default-model"]["config"]["provider"]
+    provider = plugins["llm-pi-ai"]["config"]["providers"][provider_id]
+    assert provider["api"] == "openai-completions"
+    assert provider["apiKeyEnv"] == "NEW_API_1_API_KEY"
+    expected_inputs = {model: ["text", "image"] for model in vision_models}
+    expected_inputs["glm-5"] = ["text"]
+    assert {model["id"]: model["input"] for model in provider["models"]} == expected_inputs
+    assert "fixture" not in response.text
 
 
 def test_employee_import_and_management(client: TestClient, db_session):
@@ -1115,6 +1153,119 @@ def test_articles_and_image_upload(client: TestClient, db_session):
     assert r_dt.json()["data"]["view_count"] >= 1
 
 
+def test_consumption_logs_use_admin_endpoint_with_token_filter(monkeypatch):
+    import httpx
+
+    gateway = NewApiClient(base_url="https://gateway.example.test", access_token="fixture", user_id=1, mock=False)
+
+    async def fake_get(_client, url, *, params, headers):
+        assert url == "https://gateway.example.test/api/log/"
+        assert params == {
+            "p": 2, "page_size": 100, "type": 2, "start_timestamp": 10,
+            "token_name": "EMP_1001_甲", "end_timestamp": 20,
+        }
+        return httpx.Response(200, json={"success": True, "data": {"items": [{"id": 123}]}})
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    assert asyncio.run(gateway.fetch_consumption_logs(
+        10, page=2, token_name="EMP_1001_甲", end_timestamp=20
+    )) == [{"id": 123}]
+
+
+def test_real_usage_replay_recovers_missing_logs_and_keeps_cache_on_failure(monkeypatch):
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    gateway = NewApiClient(mock=False)
+    now = int(datetime.now(timezone.utc).timestamp()) - 60
+    first_token, second_token = "EMP_1001_甲", "EMP_1002_乙"
+
+    def log(display_id, token_name, request_id):
+        return {
+            "id": display_id, "request_id": request_id, "token_name": token_name,
+            "created_at": now, "prompt_tokens": 15, "completion_tokens": 5, "model_name": "gateway-model",
+        }
+
+    old_log = log(1, first_token, "gateway-first")
+    missed_log = log(1, second_token, "gateway-second")
+    unrelated = log(2, "unrelated-token", "external-request")
+    other_owner = {**log(3, second_token, "other-account-request"), "user_id": gateway.user_id + 1}
+    fail_replay = True
+
+    async def fetch(*, start_timestamp, page, page_size, **options):
+        if fail_replay:
+            if page == 2:
+                raise RuntimeError("page unavailable")
+            assert start_timestamp == 0 and options["end_timestamp"] > now
+            return [old_log] * page_size
+        return [missed_log, old_log, unrelated, other_owner]
+
+    monkeypatch.setattr(log_sync_mod, "new_api_client", gateway)
+    monkeypatch.setattr(gateway, "fetch_consumption_logs", fetch)
+    with Session(engine) as db:
+        db.add_all([
+            Employee(emp_no="1001", name="甲", department="测试部门"),
+            Employee(emp_no="1002", name="乙", department="测试部门"),
+            UserToken(emp_no="1001", token_name=first_token, api_key_encrypted="fixture"),
+            UserToken(emp_no="1002", token_name=second_token, api_key_encrypted="fixture"),
+            UsageLogCache(**LogSyncService._log_row(old_log, {first_token: "1001"}, real=False)),
+            SystemSetting(key="last_log_sync_ts", value=str(now + 1)),
+        ])
+        db.commit()
+        with pytest.raises(RuntimeError, match="page unavailable"):
+            asyncio.run(LogSyncService.sync_incremental_logs(db))
+        assert db.query(UsageLogCache).count() == 1
+        assert db.get(SystemSetting, LogSyncService._SOURCE_KEY) is None
+        assert db.get(SystemSetting, "last_log_sync_ts").value == str(now + 1)
+
+        fail_replay = False
+        assert asyncio.run(LogSyncService.sync_incremental_logs(db)) == 2
+        assert asyncio.run(LogSyncService.sync_incremental_logs(db)) == 0
+        assert LogSyncService.get_user_overview(db, "1002", "all")["total_tokens"] == 20
+        ranking = LogSyncService.get_usage_ranking(db, "user", "all")
+        assert {row["key"]: row["total_tokens"] for row in ranking} == {"1001": 20, "1002": 20}
+        assert LogSyncService.get_usage_ranking(db, "model", "all")[0]["total_tokens"] == 40
+        admin = get_admin_overview(AdminUser(username="admin"), db)["data"]
+        assert admin["total_tokens"] == 40
+        assert admin["department_ranking"][0]["total_tokens"] == 40
+    engine.dispose()
+
+
+def test_employee_usage_refresh_queries_only_bound_token(monkeypatch):
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    gateway = NewApiClient(mock=False)
+    token_name = "EMP_1001_甲"
+    now = int(datetime.now(timezone.utc).timestamp())
+    calls = []
+
+    async def fetch(*, start_timestamp, token_name):
+        calls.append(token_name)
+        assert now - 86402 <= start_timestamp <= now - 86398
+        return [
+            {"id": 101, "token_name": token_name, "token_id": 10, "created_at": now, "prompt_tokens": 20},
+            {"id": 102, "token_name": token_name, "token_id": 99, "created_at": now, "prompt_tokens": 30},
+            {"id": 103, "token_name": "EMP_1002_乙", "token_id": 10, "created_at": now, "prompt_tokens": 40},
+        ]
+
+    monkeypatch.setattr(log_sync_mod, "new_api_client", gateway)
+    monkeypatch.setattr(gateway, "fetch_consumption_logs", fetch)
+    with Session(engine) as db:
+        db.add_all([
+            UserToken(emp_no="1001", token_name=token_name, new_api_token_id=10, api_key_encrypted="fixture"),
+            SystemSetting(key="last_log_sync_ts", value="123"),
+        ])
+        db.commit()
+        message, synced_at = asyncio.run(LogSyncService.refresh_employee_usage(db, "1001"))
+        assert message == "已同步个人近期用量"
+        assert synced_at
+        asyncio.run(LogSyncService.refresh_employee_usage(db, "1001"))
+        assert calls == [token_name]
+        assert LogSyncService.get_user_overview(db, "1001", "all")["total_tokens"] == 20
+        assert db.query(UsageLogCache).count() == 1
+        assert db.get(SystemSetting, "last_log_sync_ts").value == "123"
+    engine.dispose()
+
+
 def test_user_usage_dashboard(client: TestClient, db_session):
     """测试员工端用量趋势与模型分布看板（SQL 粒度聚合与单机轻量刷新）"""
     db_session.query(AuthLockout).delete()
@@ -1131,7 +1282,7 @@ def test_user_usage_dashboard(client: TestClient, db_session):
     emp_token = r_emp_auth.json()["access_token"]
     emp_headers = {"Authorization": f"Bearer {emp_token}"}
 
-    # 2. 员工端刷新用量数据：断言仅返回当前员工明细与全网同步元信息，绝不发起全行网关调用
+    # 2. 员工端刷新用量数据，保留同步元信息
     r_sync = client.post("/api/v1/me/usage/sync", headers=emp_headers)
     assert r_sync.status_code == 200
     sync_data = r_sync.json()

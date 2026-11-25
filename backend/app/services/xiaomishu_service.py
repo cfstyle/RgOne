@@ -2,7 +2,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 import httpx
 from sqlalchemy.orm import Session
@@ -99,7 +99,8 @@ class XiaomishuService:
             touser = default_touser
         else:
             touser = emp_no
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        beijing_time = now_utc.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=8)))
+        now_str = beijing_time.strftime("%Y-%m-%d %H:%M:%S")
         greeting = f"{employee_name} 同事" if employee_name else f"工号 {emp_no}"
         content = [
             f"时间: {now_str}",

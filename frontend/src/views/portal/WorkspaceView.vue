@@ -21,23 +21,10 @@ import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import LoginModal from '@/components/LoginModal.vue'
 import { copyToClipboard } from '@/utils/clipboard'
+import { useEmployeeToken } from '@/composables/useEmployeeToken'
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
-
-interface EmployeeTokenDetail {
-  id?: number
-  emp_no?: string
-  name?: string
-  department?: string
-  masked_key?: string
-  api_key?: string
-  status?: string
-  reset_count?: number
-  created_at?: string
-  last_used_at?: string
-  [key: string]: unknown
-}
 
 interface OverviewData {
   total_requests?: number
@@ -83,10 +70,19 @@ const showLoginModal = ref(false)
 const showResetConfirm = ref(false)
 
 // 员工凭证信息
-const tokenDetail = ref<EmployeeTokenDetail | null>(null)
+const {
+  detail: tokenDetail,
+  loading: loadingKey,
+  failure: keyFailure,
+  claiming: isClaiming,
+  resetting: isResetting,
+  reload: reloadKey,
+  claim: claimKey,
+  reset: resetKey,
+} = useEmployeeToken()
 const showPlainKey = ref(false)
 const copiedKey = ref(false)
-const isResetting = ref(false)
+let copyFeedback: ReturnType<typeof setTimeout> | undefined
 
 // 看板参数
 const selectedRange = ref<'today' | '7d' | '30d' | 'all'>('7d')
@@ -106,7 +102,9 @@ const syncing = ref(false)
 const syncCooldown = ref(0)
 const syncMsg = ref('')
 const lastSyncTime = ref('')
-const isClaiming = ref(false)
+let syncTimer: ReturnType<typeof setInterval> | undefined
+let analyticsLoad = 0
+let logsLoad = 0
 
 // ECharts 实例引用
 const trendChartEl = ref<HTMLDivElement | null>(null)
@@ -254,44 +252,38 @@ function handleWindowResize() {
   modelChartInstance?.resize()
 }
 
-async function loadTokenInfo() {
-  if (!authStore.isEmployeeLoggedIn) return
-  try {
-    tokenDetail.value = await api.getMyToken() as EmployeeTokenDetail
-  } catch (e: unknown) {
-    console.error('加载凭证失败', e)
-  }
-}
-
 async function loadAnalytics() {
   if (!authStore.isEmployeeLoggedIn) return
+  const requestId = ++analyticsLoad
   try {
     const [ovRes, trRes, mdRes] = await Promise.all([
       api.getUsageOverview(selectedRange.value) as Promise<{ data?: OverviewData }>,
       api.getUsageTrend(selectedRange.value) as Promise<{ data?: TrendData }>,
       api.getUsageModels(selectedRange.value) as Promise<{ data?: ModelDistItem[] }>,
     ])
+    if (requestId !== analyticsLoad) return
     overview.value = ovRes.data || {}
     trendData.value = trRes.data || { categories: [], series: { requests: [], prompt_tokens: [], completion_tokens: [], total_tokens: [] } }
     modelDist.value = mdRes.data || []
     await nextTick()
-    initCharts()
+    if (requestId === analyticsLoad) initCharts()
   } catch (e: unknown) {
     console.error('加载用量数据失败', e)
   }
-  loadLogs()
+  if (requestId === analyticsLoad) void loadLogs()
 }
 
 async function loadLogs() {
   if (!authStore.isEmployeeLoggedIn) return
+  const requestId = ++logsLoad
   loadingLogs.value = true
   try {
     const res = await api.getUsageLogs(logsPage.value, logsPageSize.value, selectedModelFilter.value || undefined) as { data?: { total: number; items: LogItem[] } }
-    logsData.value = res.data || { total: 0, items: [] }
+    if (requestId === logsLoad) logsData.value = res.data || { total: 0, items: [] }
   } catch (e: unknown) {
     console.error('加载日志明细失败', e)
   } finally {
-    loadingLogs.value = false
+    if (requestId === logsLoad) loadingLogs.value = false
   }
 }
 
@@ -302,73 +294,79 @@ function handleRangeChange(r: 'today' | '7d' | '30d' | 'all') {
 
 async function handleCopyKey() {
   if (!tokenDetail.value?.api_key) return
+  const employeeSession = authStore.empToken
   const ok = await copyToClipboard(tokenDetail.value.api_key)
-  if (ok) {
+  if (ok && authStore.empToken === employeeSession) {
+    clearTimeout(copyFeedback)
     copiedKey.value = true
-    setTimeout(() => {
+    copyFeedback = setTimeout(() => {
       copiedKey.value = false
     }, 2000)
   }
 }
 
 async function handleConfirmReset() {
-  isResetting.value = true
-  try {
-    const res = await api.resetMyToken() as EmployeeTokenDetail
-    tokenDetail.value = res
-    showResetConfirm.value = false
-  } catch (e: unknown) {
-    const err = e as { message?: string }
-    alert(err.message || '重置失败')
-  } finally {
-    isResetting.value = false
-  }
-}
-
-async function handleClaimKey() {
-  if (isClaiming.value) return
-  isClaiming.value = true
-  try {
-    const res = await api.claimMyToken() as EmployeeTokenDetail
-    tokenDetail.value = res
-  } catch (err: unknown) {
-    const errObj = err as { message?: string }
-    alert(errObj.message || '申领 Key 失败，请检查网关状态后重试')
-  } finally {
-    isClaiming.value = false
-  }
+  if (await resetKey()) showResetConfirm.value = false
 }
 
 async function handleTriggerSync() {
   if (syncCooldown.value > 0 || syncing.value) return
+  const employeeSession = authStore.empToken
   syncing.value = true
   syncMsg.value = ''
   try {
     const res = await api.triggerUsageSync() as { message?: string; last_successful_sync_time?: string }
+    if (authStore.empToken !== employeeSession) return
     syncMsg.value = res.message || '数据已刷新'
     if (res.last_successful_sync_time) {
       lastSyncTime.value = res.last_successful_sync_time
     }
     syncCooldown.value = 10
-    const timer = setInterval(() => {
+    syncTimer = setInterval(() => {
       syncCooldown.value--
-      if (syncCooldown.value <= 0) clearInterval(timer)
+      if (syncCooldown.value <= 0) clearInterval(syncTimer)
     }, 1000)
     await loadAnalytics()
   } catch (e: unknown) {
     const err = e as { message?: string }
-    syncMsg.value = err.message || '刷新异常'
+    if (authStore.empToken === employeeSession) syncMsg.value = err.message || '刷新异常'
   } finally {
-    syncing.value = false
+    if (authStore.empToken === employeeSession) syncing.value = false
   }
+}
+
+watch(() => authStore.empToken, (token) => {
+  analyticsLoad++
+  logsLoad++
+  setEmptyWorkspace()
+  if (token) void loadAnalytics()
+}, { immediate: true })
+
+function setEmptyWorkspace() {
+  showPlainKey.value = false
+  copiedKey.value = false
+  showResetConfirm.value = false
+  clearTimeout(copyFeedback)
+  clearInterval(syncTimer)
+  syncing.value = false
+  syncCooldown.value = 0
+  syncMsg.value = ''
+  lastSyncTime.value = ''
+  overview.value = {}
+  trendData.value = { categories: [], series: { requests: [], prompt_tokens: [], completion_tokens: [], total_tokens: [] } }
+  modelDist.value = []
+  logsData.value = { total: 0, items: [] }
+  logsPage.value = 1
+  selectedModelFilter.value = ''
+  loadingLogs.value = false
+  trendChartInstance?.dispose()
+  modelChartInstance?.dispose()
+  trendChartInstance = null
+  modelChartInstance = null
 }
 
 onMounted(() => {
   window.addEventListener('resize', handleWindowResize)
-  if (authStore.isEmployeeLoggedIn) {
-    loadTokenInfo()
-    loadAnalytics()
-  }
 })
 
 watch(
@@ -381,6 +379,10 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  analyticsLoad++
+  logsLoad++
+  clearTimeout(copyFeedback)
+  clearInterval(syncTimer)
   window.removeEventListener('resize', handleWindowResize)
   trendChartInstance?.dispose()
   modelChartInstance?.dispose()
@@ -416,7 +418,10 @@ onBeforeUnmount(() => {
             <div class="user-primary-row">
               <span class="user-name">{{ tokenDetail?.name || authStore.empName }}</span>
               <span class="user-empno">· {{ tokenDetail?.emp_no || authStore.empNo }}</span>
-              <span v-if="tokenDetail?.status === 'pending_claim' || !tokenDetail?.api_key" class="status-pill warning">
+              <span v-if="!tokenDetail" class="status-pill warning">
+                {{ loadingKey ? '读取中' : '待读取 Key' }}
+              </span>
+              <span v-else-if="tokenDetail.status === 'pending_claim' || !tokenDetail.api_key" class="status-pill warning">
                 待申领 Key
               </span>
               <span v-else-if="tokenDetail?.status === 'disabled'" class="status-pill danger">
@@ -431,7 +436,14 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="cred-right">
-          <div v-if="tokenDetail?.status === 'pending_claim' || !tokenDetail?.api_key" class="key-control-box">
+          <div v-if="!tokenDetail" class="key-control-box">
+            <span class="key-label">专属 API Key：</span>
+            <span role="status">{{ loadingKey ? '正在读取专属 Key…' : keyFailure || '专属 Key 尚未读取' }}</span>
+            <button v-if="!loadingKey" type="button" class="cred-icon-btn md-state-layer" @click="reloadKey">
+              重试读取
+            </button>
+          </div>
+          <div v-else-if="tokenDetail.status === 'pending_claim' || !tokenDetail.api_key" class="key-control-box">
             <span class="key-label">专属 API Key：</span>
             <code class="key-string pending">已登录，Key 暂未申领成功（网关服务可能未就绪）</code>
             <button
@@ -439,7 +451,7 @@ onBeforeUnmount(() => {
               class="cred-icon-btn reset-btn md-state-layer"
               :disabled="isClaiming"
               title="重新申领"
-              @click="handleClaimKey"
+              @click="claimKey"
             >
               <RotateCcw :size="14" :class="{ 'spin-icon': isClaiming }" />
               <span>{{ isClaiming ? '申领中...' : '重新申领' }}</span>
@@ -480,6 +492,7 @@ onBeforeUnmount(() => {
               <span>重置 Key</span>
             </button>
           </div>
+          <p v-if="tokenDetail && keyFailure && !showResetConfirm" class="reset-count-hint" role="status">{{ keyFailure }}</p>
           <div class="reset-count-hint">已重置 {{ tokenDetail?.reset_count || 0 }} 次 · 历史用量数据持续保留</div>
         </div>
       </section>
@@ -523,7 +536,7 @@ onBeforeUnmount(() => {
 
         <div class="sync-actions">
           <span class="sync-meta-hint">
-            数据更新至：{{ lastSyncTime || '全网就绪最新' }} · 后台每 5 分钟自动增量同步
+            数据更新至：{{ lastSyncTime || '等待同步' }} · 后台每 5 分钟自动增量同步
           </span>
           <span v-if="syncMsg" class="sync-msg-text">{{ syncMsg }}</span>
           <button
@@ -714,6 +727,7 @@ onBeforeUnmount(() => {
         <p class="warn-text">
           重置后旧 API Key 将立即失效！客户端需填入新 Key 才能继续调用。历史用量与日志数据将完整保留。
         </p>
+        <p v-if="keyFailure" class="warn-text" role="status">{{ keyFailure }}</p>
         <div class="modal-actions">
           <button type="button" class="cancel-btn md-state-layer" @click="showResetConfirm = false">
             取消
@@ -733,7 +747,6 @@ onBeforeUnmount(() => {
     <!-- 统一登录弹窗 -->
     <LoginModal
       v-model="showLoginModal"
-      @success="() => { loadTokenInfo(); loadAnalytics(); }"
     />
   </div>
 </template>

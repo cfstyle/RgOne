@@ -4,6 +4,17 @@ import AdminLayout from '@/layouts/AdminLayout.vue'
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(to, _from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (
+      (to.name === 'harness-guide' && /^#step-(?:[1-9]|1[0-2])$/.test(to.hash)) ||
+      (to.name === 'home-guide' && to.hash === '#harness-config')
+    ) {
+      return { el: to.hash, top: 88 }
+    }
+    if (to.name === 'harness-guide') return { top: 0 }
+    return false
+  },
   routes: [
     // 员工门户体系 (Portal Track)
     {
@@ -14,6 +25,11 @@ const router = createRouter({
           path: '',
           name: 'home-guide',
           component: () => import('@/views/portal/HomeGuideView.vue'),
+        },
+        {
+          path: 'harness-guide',
+          name: 'harness-guide',
+          component: () => import('@/views/portal/HarnessGuideView.vue'),
         },
         {
           path: 'workspace',
