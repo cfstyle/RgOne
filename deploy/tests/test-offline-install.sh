@@ -25,6 +25,10 @@ case "$1 $2" in
     'build --build-arg') test "${DOCKER_BUILDKIT:-}" = 0 ;;
     'image save') printf 'simulated image %s\n' "$5" > "$4" ;;
     'image load') test -s "$4" ;;
+    'image inspect')
+        test "${DOCKER_TEST_IMAGE_MISSING:-}" != "$5"
+        echo linux/amd64
+        ;;
     'compose port') echo "0.0.0.0:${RGONE_PORT:-8000}" ;;
     'ps --format')
         if [[ "${DOCKER_TEST_PORT_CONFLICT:-0}" == 1 ]]; then
@@ -176,4 +180,16 @@ if DOCKER_TEST_BUILDX=0 bash deploy/export-images.sh all linux/arm64; then
     exit 1
 fi
 test "$pulls" -eq "$(grep -c '^pull ' docker.log)"
+RGONE_USE_LOCAL_BASE_IMAGES=1 RGONE_PIP_INDEX_URL=https://pypi.example.test/simple/ \
+    RGONE_NPM_REGISTRY=https://npm.example.test/ bash deploy/export-images.sh all
+grep -Fq 'image inspect --format {{.Os}}/{{.Architecture}} node:22-bookworm-slim' docker.log
+grep -Fq 'image inspect --format {{.Os}}/{{.Architecture}} busybox:1.37.0' docker.log
+grep -Fq -- '--build-arg PIP_INDEX_URL=https://pypi.example.test/simple/ --build-arg NPM_CONFIG_REGISTRY=https://npm.example.test/' docker.log
+test "$pulls" -eq "$(grep -c '^pull ' docker.log)"
+builds="$(grep -c '^build --build-arg ' docker.log)"
+if RGONE_USE_LOCAL_BASE_IMAGES=1 DOCKER_TEST_IMAGE_MISSING=busybox:1.37.0 bash deploy/export-images.sh app; then
+    echo "Exporter accepted a missing local base image" >&2
+    exit 1
+fi
+test "$builds" -eq "$(grep -c '^build --build-arg ' docker.log)"
 echo "Offline installation tests passed"

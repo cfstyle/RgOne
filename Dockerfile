@@ -1,6 +1,7 @@
 ARG PY311_BASE_IMAGE=python:3.11-slim-bookworm
 
 FROM node:22-bookworm-slim AS frontend-build
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --include=dev --no-audit --no-fund
@@ -8,6 +9,7 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM ${PY311_BASE_IMAGE} AS backend-deps
+ARG PIP_INDEX_URL=https://pypi.org/simple/
 USER root
 WORKDIR /build
 COPY backend/requirements.txt ./requirements.txt

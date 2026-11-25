@@ -17,6 +17,10 @@ bash deploy/export-images.sh app   # 日常更新，只输出应用包
 
 首次部署包在 `build/rgone-offline-amd64.tar.gz`。ARM64 使用 `bash deploy/export-images.sh all linux/arm64`，构建机须能运行目标架构的容器。构建脚本优先使用 Buildx。Buildx 不可用时，同架构可通过 Docker 的传统构建器打包，跨架构需要 Buildx。Python 和 Nginx 也可分别通过 `python`、`nginx` 参数单独导出。应用包内附 Compose、Nginx 配置、环境变量模板和部署手册。
 
+如果构建机无法直连镜像仓库，可以先导入同架构的 Python、Nginx、`node:22-bookworm-slim` 和 `busybox:1.37.0` 镜像，再执行 `RGONE_USE_LOCAL_BASE_IMAGES=1 bash deploy/export-images.sh all`。此模式使用本地镜像和传统构建器，构建过程仍需访问 npm 和 Python 依赖源。
+
+构建机可通过 `RGONE_PIP_INDEX_URL` 和 `RGONE_NPM_REGISTRY` 指定可访问的 Python 和 npm 镜像源。这些设置只用于当前 RgOne 镜像构建。
+
 通过构建机环境变量 `RGONE_PYTHON_IMAGE` 和 `RGONE_NGINX_IMAGE` 可选择通用镜像，首次安装会将这些引用写入 `.env`。共享 Python 镜像须提供 Linux Python 3.11，在普通用户下可执行 `/bin/sh` 和 `python`，构建环境须支持 `pip`。
 
 ### 2. 在隔离内网首次部署
