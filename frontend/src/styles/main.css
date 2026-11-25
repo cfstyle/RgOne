@@ -1,0 +1,262 @@
+@import './m3-tokens.css';
+
+/* Reset & Box Sizing */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100vh;
+  background-color: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  transition: background-color var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard),
+              color var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
+  overflow-x: hidden;
+}
+
+code,
+pre,
+.font-mono,
+.code-snippet {
+  font-family: "Cascadia Mono", "Consolas", "Plus Jakarta Sans", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 标题在 Windows 下统一使用 600 字重，避免 700/800 边缘模糊 */
+h1, h2, h3, h4, h5, h6,
+.type-title-lg,
+.type-title-md {
+  font-weight: 600;
+}
+
+#app {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  outline: none;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-sys-color-outline);
+}
+
+/* ==========================================================================
+   5 级双端语义模数音阶 (Modular Type Scale Utilities)
+   彻底废弃散落的 11px、32px、48px 等非标字号，建立双端 5 级严格音阶：
+   Admin: 26px -> 12px (跨度 2.16x)
+   Portal: 42px -> 13px (跨度 3.23x)
+   ========================================================================== */
+
+/* Tier 1: 视觉焦点（Admin: 26px/32px KPI 大数字; Portal: 42px/50px Hero 主标题） */
+.type-display {
+  font-size: var(--md-type-display-size);
+  line-height: var(--md-type-display-lh);
+  font-weight: var(--md-type-display-weight);
+  letter-spacing: var(--md-type-display-tracking);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tier 2: 页面/区块标题（Admin: 20px/28px 页面顶部 H1; Portal: 28px/36px Bento 区块 H2） */
+.type-title-lg {
+  font-size: var(--md-type-title-lg-size);
+  line-height: var(--md-type-title-lg-lh);
+  font-weight: var(--md-type-title-lg-weight);
+  letter-spacing: var(--md-type-title-lg-tracking);
+}
+
+/* Tier 3: 卡片/模块标题（Admin: 16px/24px; Portal: 20px/28px） */
+.type-title-md {
+  font-size: var(--md-type-title-md-size);
+  line-height: var(--md-type-title-md-lh);
+  font-weight: var(--md-type-title-md-weight);
+  letter-spacing: var(--md-type-title-md-tracking);
+}
+
+/* Tier 4: 主力正文与列表主行（Admin: 14px/22px; Portal: 15px/24px） */
+.type-body {
+  font-size: var(--md-type-body-size);
+  line-height: var(--md-type-body-lh);
+  font-weight: var(--md-type-body-weight);
+  letter-spacing: var(--md-type-body-tracking);
+}
+
+/* Tier 5: 辅助元数据与徽章（Admin: 12px/18px; Portal: 13px/18px） - 全站严禁小于 12px */
+.type-meta {
+  font-size: var(--md-type-meta-size);
+  line-height: var(--md-type-meta-lh);
+  font-weight: var(--md-type-meta-weight);
+  letter-spacing: var(--md-type-meta-tracking);
+}
+
+/* 字重与字距辅助类 */
+.font-normal {
+  font-weight: 400;
+}
+.font-medium {
+  font-weight: 500;
+}
+.font-semibold {
+  font-weight: 600;
+}
+.font-bold {
+  font-weight: 700;
+}
+
+/* 兼容与平滑收敛层：将历史 M3 类名映射到 5 级音阶体系，禁止任何低于 12px 的字号 */
+.display-large,
+.display-medium,
+.display-small   { font-size: var(--md-type-display-size); line-height: var(--md-type-display-lh); font-weight: var(--md-type-display-weight); letter-spacing: var(--md-type-display-tracking); }
+
+.headline-large,
+.headline-medium { font-size: var(--md-type-title-lg-size); line-height: var(--md-type-title-lg-lh); font-weight: var(--md-type-title-lg-weight); letter-spacing: var(--md-type-title-lg-tracking); }
+.headline-small  { font-size: var(--md-type-title-md-size); line-height: var(--md-type-title-md-lh); font-weight: var(--md-type-title-md-weight); }
+
+.title-large     { font-size: var(--md-type-title-lg-size); line-height: var(--md-type-title-lg-lh); font-weight: var(--md-type-title-lg-weight); }
+.title-medium,
+.title-small     { font-size: var(--md-type-title-md-size); line-height: var(--md-type-title-md-lh); font-weight: var(--md-type-title-md-weight); }
+
+.label-large     { font-size: var(--md-type-body-size); line-height: var(--md-type-body-lh); font-weight: 500; }
+.label-medium,
+.label-small     { font-size: var(--md-type-meta-size); line-height: var(--md-type-meta-lh); font-weight: 500; }
+
+.body-large,
+.body-medium     { font-size: var(--md-type-body-size); line-height: var(--md-type-body-lh); font-weight: var(--md-type-body-weight); }
+.body-small      { font-size: var(--md-type-meta-size); line-height: var(--md-type-meta-lh); font-weight: 400; }
+
+/* M3 Expressive Geometric Badge Container (48px x 48px, 16px corner) */
+.m3-geometric-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.25s cubic-bezier(0.2, 0.0, 0, 1.0);
+}
+
+/* Tabular Numbers Utility for KPIs and Data */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* ==========================================================================
+   M3 胶囊徽章与防折行全局加固工具类 (Badge & No-Wrap Guard)
+   ========================================================================== */
+.type-badge {
+  font-size: var(--md-type-meta-size);
+  line-height: var(--md-type-meta-lh);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 全局防折行与防挤压原子辅助类 */
+.whitespace-nowrap {
+  white-space: nowrap;
+}
+
+.shrink-0 {
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Studio 极简 · 极简工程 (#1F1F1F) 专属公共类与微阴影规范
+   ========================================================================== */
+.studio-elevated-card {
+  background: var(--md-sys-color-surface-container-lowest);
+  border-radius: 20px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.studio-elevated-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.03);
+}
+
+/* 语义状态低饱和胶囊 (低饱和度色彩，严禁刺眼) */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-pill.success {
+  background-color: var(--sys-status-success-bg, #E6F4EA);
+  color: var(--sys-status-success-text, #137333);
+}
+
+.status-pill.warning {
+  background-color: var(--sys-status-warning-bg, #FEF3C7);
+  color: var(--sys-status-warning-text, #B45309);
+}
+
+.status-pill.danger {
+  background-color: var(--sys-status-danger-bg, #FEE2E2);
+  color: var(--sys-status-danger-text, #B91C1C);
+}
+
+.status-pill.neutral {
+  background-color: var(--md-sys-color-primary-container, #F1F3F5);
+  color: var(--md-sys-color-on-surface-variant, #5F6368);
+}

@@ -1,0 +1,126 @@
+# Material Design 3 双端自适应通用 Web 脚手架
+
+基于 **Vite + Vue 3 (`<script setup lang="ts">`) + Vue Router + Pinia + Lucide Icons** 构建的轻量、现代化、开箱即用的 Material Design 3 双端自适应 Web 脚手架模板。
+
+---
+
+## 🛠️ 技术栈与规范
+
+- **核心框架**：Vue 3 (全量 Composition API + `<script setup lang="ts">`)
+- **构建工具**：Vite 6
+- **路由管理**：Vue Router 4
+- **状态管理**：Pinia
+- **图标系统**：`lucide-vue-next`（现代线性图标库）
+- **设计规范**：严格遵循 Google Material Design 3 (Material You) 规范
+
+---
+
+## 📁 核心目录与架构说明
+
+```
+my-vue3-m3-starter/
+├── .agent/
+│   ├── rules/
+│   │   ├── vue3-m3-stack.md           # M3 视觉设计与组件架构铁律（颜色 Token、双轨外壳、禁止硬编码）
+│   │   └── modern-web-reliability.md  # 现代 Web 零缺陷工程准则（异步防竞态、防泄漏、边界校验、TS门禁）
+│   └── workflows/
+│       ├── new-project.md             # 新项目初始化向导工作流（/new-project）
+│       └── refactor-legacy.md         # 存量旧项目重构迁移工作流（/refactor-legacy）
+├── AGENTS.md                          # OpenAI Codex / 通用 AI 编程助手规范与工作流入口
+├── src/
+│   ├── components/
+│   │   └── m3/                # M3 原子基础组件库
+│   │       ├── MdButton.vue      # 按钮（filled / tonal / outlined / text，全圆角 9999px）
+│   │       ├── MdCard.vue        # 卡片（elevated / filled / outlined / primary-tonal / tertiary-tonal）
+│   │       ├── AdaptiveModal.vue # 响应式弹窗（手机端 Bottom Sheet / PC 居中 Dialog）
+│   │       └── index.ts          # 统一导出
+│   ├── layouts/
+│   │   ├── AdaptiveShell.vue  # 双端自适应外壳（抽屉 Drawer / 窄轨 Rail / 底部栏 Bar）
+│   │   └── PortalShell.vue    # 官网级展示外壳（顶部居中悬浮毛玻璃胶囊导航 + 精致页脚）
+│   ├── stores/
+│   │   └── theme.ts           # Pinia 主题管理 Store（支持深/浅色模式切换与持久化）
+│   ├── styles/
+│   │   ├── m3-tokens.css      # M3 标准语义化 Design Tokens（Surface 分层、颜色、圆角、状态层）
+│   │   └── main.css           # 全局样式重置与排版规范
+│   ├── views/
+│   │   ├── HomeView.vue          # 纯净业务起步页（后台管理默认主页）
+│   │   ├── UiPlaygroundView.vue  # M3 组件与动效参考演练场（/playground）
+│   │   ├── portal/
+│   │   │   └── PortalShowcaseView.vue # M3 官网级视觉示范页（/portal，Hero + Bento Grid）
+│   │   ├── AnalyticsView.vue     # 示例数据分析页
+│   │   ├── MessagesView.vue      # 示例消息中心页
+│   │   └── SettingsView.vue      # 示例偏好与系统设置页
+│   ├── App.vue
+│   └── main.ts
+```
+
+---
+
+## 🌐 双轨共存通用架构 (Admin + Portal)
+
+本工程支持一套底层 Token 与组件库驱动两种主流产品形态：
+1. **后台管理工作台模式 (`AdaptiveShell`)**：默认根路径 `/`，提供桌面抽屉、平板导航轨、移动端底栏的完整工作台框架。在左侧边栏底部附带一键切换至官网页面的入口。
+2. **官网级展示模式 (`PortalShell`)**：访问路径 `/portal`，提供居中悬浮毛玻璃胶囊导航栏（100% 宽度视野）、36px 超大圆角 Hero Banner、非对称 Bento Grid 与现代 M3 页脚。右侧内置快速回到后台的动作按钮。
+3. **开新项目建议**：可根据产品属性直接删除其中一个外壳作为单一纯净项目，亦可保持双轨混合使用。
+
+---
+
+## 📐 双端自适应响应式断点体系
+
+| 断点区间 | 设备模式 | 布局表现 |
+| :--- | :--- | :--- |
+| **`< 600px`** (Compact) | 手机端 | 底部固定 80px `Navigation Bar`（带胶囊指示器）+ 顶部 64px `Top App Bar`；弹窗自动呈现为底部滑出的 `Bottom Sheet`（顶部圆角 28px + 拖拽手柄）。 |
+| **`600px - 839px`** (Medium) | 平板端 | 左侧固定 80px 窄边 `Navigation Rail`（图标 + 短标签）；弹窗呈现为屏幕居中 `Dialog`。 |
+| **`>= 840px`** (Expanded) | 桌面端 | 左侧固定 260px 展开式 `Navigation Drawer`，顶部集成胶囊搜索栏，内容区居中限宽 1280px。 |
+
+---
+
+## 🎨 深色模式 (Dark Theme)
+
+- 采用语义化 Token 系统驱动，通过 `document.documentElement.dataset.theme = 'dark' | 'light'` 切换。
+- `index.html` 内置防闪白初始化脚本，结合用户偏好持久化（`localStorage`）与系统级媒体查询。
+- 业务样式严禁硬编码颜色值（`#fff` / `#000`），必须使用 `var(--md-sys-color-*)`。
+
+---
+
+## 🧪 组件演练场 (Playground)
+
+项目内置了完整的 M3 组件演练与交互参考页：
+- 访问路径：`http://localhost:5173/playground`
+- 包含 `MdButton` 四态、`MdCard` 三种色调分层形态、`AdaptiveModal` 双端自动转换测试用例。
+
+---
+
+## 🤖 AI 协同开发与快捷工作流
+
+本仓库深度适配 **Google Antigravity** 与 **OpenAI Codex** 等主流 AI 编程助手，实现多工具无缝兼容与标准化开发：
+
+- **多 AI 平台兼容入口**：
+  - **Antigravity 原生支持**：自动读取 `.agent/rules/` 下的设计与工程守则，并支持直接在对话框输入 `/new-project` 或 `/refactor-legacy` 呼出工作流。
+  - **OpenAI Codex / 通用 Agent 支持**：根目录配备 [`AGENTS.md`](AGENTS.md)，作为 Codex 的规则与工作流总入口。在 Codex 环境下直接输入“执行 new-project”或“执行 refactor-legacy”即可调用同等标准化流程。
+- **事前规则约束（打开即自动生效）**：
+  - `.agent/rules/vue3-m3-stack.md` & `.agent/rules/m3-design-system.md`：强制全量 Vue 3 `<script setup lang="ts">`、Lucide 图标、M3 语义 Token、禁用硬编码颜色与未授权重型 UI 库。
+  - `.agent/rules/modern-web-reliability.md`：参照 Google 现代 Web 高可靠性工程准则，强制并发竞态拦截（`AbortController`）、监听器成对销毁防内存泄漏、不可信数据防御性校验与纯净响应式状态。
+- **快捷交互工作流（Slash Commands / Codex 指令）**：
+  - `/new-project` / `执行 new-project`：呼出**新项目初始化向导**，引导确认项目名称、6 套金融/通用 HCT 种子色锁定、布局形态（后台/官网/双轨）及首批核心业务页面搭建。
+  - `/refactor-legacy` / `执行 refactor-legacy`：呼出**存量旧项目重构流程**，支持 Element Plus / Ant Design Vue 样式变量桥接、分阶段类型清洗、外壳接管与 M3 组件渐进重构。
+- **交付门禁自检**：
+  - 交付前统一运行 `npm run check`（`vue-tsc --noEmit && eslint src`），实现零 TS 报错与零逻辑隐患闭环。
+
+---
+
+## 🚀 启动与构建
+
+```bash
+# 1. 安装项目依赖
+npm install
+
+# 2. 启动本地开发服务器
+npm run dev
+
+# 3. TypeScript 类型校验与生产环境打包
+npm run build
+
+# 4. 预览生产构建结果
+npm run preview
+```

@@ -1,0 +1,90 @@
+services:
+  app-release:
+    image: rgone-app:latest
+    pull_policy: never
+    network_mode: none
+    volumes:
+      - type: volume
+        source: app-release
+        target: /release
+        volume:
+          nocopy: true
+
+  backend:
+    image: "${RGONE_PYTHON_IMAGE:-python:3.11-slim-bookworm}"
+    pull_policy: never
+    restart: unless-stopped
+    user: "10001:10001"
+    working_dir: /
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        cd /srv/rgone/current
+        export PYTHONPATH="$$(pwd -P)/deps"
+        exec python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      app-release:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      APP_ENV: "${APP_ENV:-production}"
+      MOCK_NEW_API: "false"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      APP_SECRET_KEY: "${APP_SECRET_KEY:?Set APP_SECRET_KEY in .env}"
+      JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
+      INIT_ADMIN_PASSWORD: "${INIT_ADMIN_PASSWORD:?Set INIT_ADMIN_PASSWORD in .env}"
+      DEPLOYMENT_DATA_DIR: /app/data
+      DATABASE_URL: sqlite:////app/data/app.db
+      STORAGE_DOWNLOADS_DIR: /app/data/storage/downloads
+      STORAGE_IMAGES_DIR: /app/data/storage/images
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    volumes:
+      - type: volume
+        source: app-release
+        target: /srv/rgone
+        read_only: true
+        volume:
+          nocopy: true
+      - type: bind
+        source: ./data
+        target: /app/data
+        bind:
+          create_host_path: false
+
+  nginx:
+    image: "${RGONE_NGINX_IMAGE:-nginx:1.28-alpine}"
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${RGONE_PORT:-8000}:80"
+    healthcheck:
+      test: ["CMD", "nginx", "-t", "-q"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - type: volume
+        source: app-release
+        target: /srv/rgone
+        read_only: true
+        volume:
+          nocopy: true
+      - type: bind
+        source: ./nginx.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind:
+          create_host_path: false
+
+volumes:
+  app-release:
