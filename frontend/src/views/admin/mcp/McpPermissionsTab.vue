@@ -75,6 +75,7 @@ async function submitReview() {
     })
     toast.success(reviewAction.value === 'approved' ? '已批准该权限申请' : '已驳回该权限申请')
     reviewModalVisible.value = false
+    window.dispatchEvent(new CustomEvent('rgone:admin-badges-refresh'))
     await fetchRequests()
   } catch (err: unknown) {
     toast.error(getMcpErrorMessage(err, '审批提交失败'))

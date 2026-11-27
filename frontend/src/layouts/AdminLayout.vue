@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   LayoutDashboard,
@@ -16,6 +16,8 @@ import {
   Blocks,
   Puzzle,
 } from 'lucide-vue-next'
+import { api } from '@/api'
+import { getAdminPermissionRequests } from '@/api/mcp'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import LoginModal from '@/components/LoginModal.vue'
@@ -27,6 +29,8 @@ const authStore = useAuthStore()
 const themeStore = useThemeStore()
 
 const showLoginModal = ref(!authStore.isAdminLoggedIn)
+const pendingMcpCount = ref(0)
+const pendingPluginCount = ref(0)
 
 const menuItems = [
   { label: '总览仪表盘', path: '/admin/dashboard', icon: LayoutDashboard },
@@ -38,6 +42,53 @@ const menuItems = [
   { label: '插件市场治理', path: '/admin/plugins', icon: Puzzle },
   { label: '系统与网关配置', path: '/admin/settings', icon: Settings },
 ]
+
+async function refreshPendingBadges() {
+  if (!authStore.isAdminLoggedIn) {
+    pendingMcpCount.value = 0
+    pendingPluginCount.value = 0
+    return
+  }
+  const [mcpReqs, pluginRes] = await Promise.all([
+    getAdminPermissionRequests({ status: 'pending' }).catch(() => []),
+    api.getAdminPlugins('pending').catch(() => ({ items: [] })),
+  ])
+  pendingMcpCount.value = Array.isArray(mcpReqs) ? mcpReqs.length : 0
+  pendingPluginCount.value = Array.isArray(pluginRes.items) ? pluginRes.items.length : 0
+}
+
+function getMenuBadge(path: string): number {
+  if (path === '/admin/mcp-hub') return pendingMcpCount.value
+  if (path === '/admin/plugins') return pendingPluginCount.value
+  return 0
+}
+
+function handleBadgesRefreshEvent() {
+  void refreshPendingBadges()
+}
+
+watch(
+  () => authStore.isAdminLoggedIn,
+  (loggedIn) => {
+    if (loggedIn) {
+      void refreshPendingBadges()
+    } else {
+      pendingMcpCount.value = 0
+      pendingPluginCount.value = 0
+    }
+  }
+)
+
+onMounted(() => {
+  window.addEventListener('rgone:admin-badges-refresh', handleBadgesRefreshEvent)
+  if (authStore.isAdminLoggedIn) {
+    void refreshPendingBadges()
+  }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('rgone:admin-badges-refresh', handleBadgesRefreshEvent)
+})
 
 function handleLogout() {
   authStore.logoutAdmin()
@@ -70,7 +121,10 @@ function handleLogout() {
             @click="router.push(item.path)"
           >
             <component :is="item.icon" :size="18" />
-            <span>{{ item.label }}</span>
+            <span class="menu-item-label">{{ item.label }}</span>
+            <span v-if="getMenuBadge(item.path) > 0" class="menu-badge">
+              {{ getMenuBadge(item.path) > 99 ? '99+' : getMenuBadge(item.path) }}
+            </span>
           </button>
         </nav>
       </div>
@@ -219,6 +273,24 @@ function handleLogout() {
   background-color: var(--md-sys-color-primary-container);
   color: var(--md-sys-color-on-surface);
   font-weight: 600;
+}
+
+.menu-item-label {
+  flex: 1;
+}
+
+.menu-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background-color: var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 .sidebar-bottom {

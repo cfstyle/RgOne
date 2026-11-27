@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Activity,
@@ -14,6 +14,7 @@ import {
 } from 'lucide-vue-next'
 import MdButton from '@/components/m3/MdButton.vue'
 import MdCard from '@/components/m3/MdCard.vue'
+import { getAdminPermissionRequests } from '@/api/mcp'
 import McpAuditTab from './mcp/McpAuditTab.vue'
 import McpDashboardTab, { type McpAdminTabKey } from './mcp/McpDashboardTab.vue'
 import McpDebugTab from './mcp/McpDebugTab.vue'
@@ -52,6 +53,25 @@ const debugToolName = ref<string | undefined>(undefined)
 const engineUnavailable = ref(false)
 const engineErrorMessage = ref('')
 const retryNonce = ref(0)
+const pendingPermCount = ref(0)
+
+async function fetchPendingPermCount() {
+  const list = await getAdminPermissionRequests({ status: 'pending' }).catch(() => [])
+  pendingPermCount.value = Array.isArray(list) ? list.length : 0
+}
+
+function handleBadgesRefreshEvent() {
+  void fetchPendingPermCount()
+}
+
+onMounted(() => {
+  window.addEventListener('rgone:admin-badges-refresh', handleBadgesRefreshEvent)
+  void fetchPendingPermCount()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('rgone:admin-badges-refresh', handleBadgesRefreshEvent)
+})
 
 function switchTab(tab: McpAdminTabKey) {
   activeTab.value = tab
@@ -108,6 +128,9 @@ watch(
       >
         <component :is="tab.icon" :size="15" />
         <span>{{ tab.label }}</span>
+        <span v-if="tab.key === 'permissions' && pendingPermCount > 0" class="tab-badge">
+          {{ pendingPermCount > 99 ? '99+' : pendingPermCount }}
+        </span>
       </button>
     </div>
 
@@ -222,6 +245,19 @@ watch(
   background-color: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
   font-weight: 600;
+}
+
+.tab-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background-color: var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
 }
 
 .engine-down-box {

@@ -98,6 +98,7 @@ async function submitReview() {
       toast.success(res.message)
     }
     reviewModalVisible.value = false
+    window.dispatchEvent(new CustomEvent('rgone:admin-badges-refresh'))
     await fetchPlugins()
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : '审核处理失败')

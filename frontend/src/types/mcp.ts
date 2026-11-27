@@ -165,6 +165,7 @@ export interface AuditLog {
   params_summary: Record<string, unknown>
   result_status: string
   duration_ms: number
+  client_ip?: string
   trace_id?: string
 }
 

@@ -158,6 +158,7 @@ onBeforeUnmount(() => {
             <tr>
               <th>时间</th>
               <th>调用主体</th>
+              <th>来源 IP</th>
               <th>服务 / 工具</th>
               <th>客户端</th>
               <th>状态</th>
@@ -171,6 +172,7 @@ onBeforeUnmount(() => {
                 {{ item.timestamp ? item.timestamp.slice(0, 19).replace('T', ' ') : '-' }}
               </td>
               <td>{{ item.user_id || '-' }}</td>
+              <td class="mono sub-text">{{ item.client_ip || '-' }}</td>
               <td>
                 <div class="tool-cell">
                   <strong>{{ item.tool_name }}</strong>
@@ -216,15 +218,49 @@ onBeforeUnmount(() => {
     <AdaptiveModal v-model="detailModalVisible" title="调用审计详情" max-width="640px">
       <div v-if="activeLog" class="audit-detail">
         <div class="kv-grid">
-          <div><span>Trace ID:</span> <span class="mono">{{ activeLog.trace_id || '-' }}</span></div>
-          <div><span>调用主体:</span> {{ activeLog.user_id }} ({{ activeLog.client_id }})</div>
-          <div><span>服务 / 工具:</span> <span class="mono">{{ activeLog.service_id }} / {{ activeLog.tool_name }}</span></div>
-          <div><span>状态 / 耗时:</span> {{ activeLog.result_status }} ({{ activeLog.duration_ms }} ms)</div>
+          <div class="kv-item">
+            <span class="kv-label">调用时间</span>
+            <span class="kv-val mono">{{ activeLog.timestamp ? activeLog.timestamp.slice(0, 19).replace('T', ' ') : '-' }}</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-label">调用主体</span>
+            <span class="kv-val">{{ activeLog.user_id || '-' }}</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-label">来源 IP</span>
+            <span class="kv-val mono">{{ activeLog.client_ip || '-' }}</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-label">客户端</span>
+            <span class="kv-val">{{ activeLog.client_id || '-' }}</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-label">所属服务</span>
+            <span class="kv-val">{{ serviceNameMap.get(activeLog.service_id) || activeLog.service_id }}</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-label">工具名称</span>
+            <span class="kv-val mono break-all-cell">{{ activeLog.tool_name }}</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-label">执行状态</span>
+            <span class="kv-val">{{ activeLog.result_status }}</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-label">耗时</span>
+            <span class="kv-val mono">{{ activeLog.duration_ms }} ms</span>
+          </div>
         </div>
         <div class="detail-block">
           <strong>脱敏入参 (Params Summary)</strong>
+          <div
+            v-if="!activeLog.params_summary || Object.keys(activeLog.params_summary).length === 0"
+            class="empty-params-hint"
+          >
+            无调用入参
+          </div>
           <!-- eslint-disable-next-line vue/no-v-html -->
-          <pre class="detail-pre"><code v-html="highlightedParamsHtml"></code></pre>
+          <pre v-else class="detail-pre"><code v-html="highlightedParamsHtml"></code></pre>
         </div>
       </div>
       <template #actions>
@@ -355,13 +391,42 @@ onBeforeUnmount(() => {
 
 .kv-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  padding: 12px 14px;
+  border-radius: var(--md-sys-shape-corner-small);
+  background-color: var(--md-sys-color-surface-container-low);
   font-size: 12px;
 }
 
-.kv-grid span:first-child {
+.kv-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kv-label {
+  font-size: 11px;
   color: var(--md-sys-color-on-surface-variant);
+}
+
+.kv-val {
+  color: var(--md-sys-color-on-surface);
+  font-weight: 500;
+}
+
+.break-all-cell {
+  word-break: break-all;
+}
+
+.empty-params-hint {
+  padding: 14px;
+  border-radius: var(--md-sys-shape-corner-small);
+  background-color: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 12px;
+  text-align: center;
 }
 
 .detail-block {

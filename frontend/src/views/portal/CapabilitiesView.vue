@@ -15,7 +15,6 @@ import {
   Code,
   Compass,
   Copy,
-  ExternalLink,
   FileSpreadsheet,
   FileText,
   FolderKanban,
@@ -412,6 +411,71 @@ function toggleSelectAllNonL0() {
   selectedToolIdsForApply.value = next
 }
 
+interface HumanSchemaField {
+  name: string
+  type: string
+  required: boolean
+  description: string
+  enumValues: string[]
+  defaultValue?: string
+}
+
+function extractSchemaFields(schema: Record<string, unknown> | undefined): HumanSchemaField[] {
+  if (!schema || typeof schema.properties !== 'object' || schema.properties === null) {
+    return []
+  }
+  const propsObj = schema.properties as Record<string, Record<string, unknown>>
+  const requiredSet = new Set(
+    Array.isArray(schema.required) ? schema.required.map((r) => String(r)) : []
+  )
+  return Object.entries(propsObj).map(([name, prop]) => ({
+    name,
+    type: String(prop?.type || 'string'),
+    required: requiredSet.has(name),
+    description: String(prop?.description || '暂无参数说明'),
+    enumValues: Array.isArray(prop?.enum) ? prop.enum.map((v) => String(v)) : [],
+    defaultValue: prop?.default !== undefined ? String(prop.default) : undefined,
+  }))
+}
+
+function getCredentialDisplayText(item: UserMcpDetail): string {
+  const summary = item.credential_summary
+  if (summary?.display_label && summary?.display_value) {
+    return `${summary.display_label}：${summary.display_value}`
+  }
+  if (summary?.username) {
+    return `业务账号：${summary.username}`
+  }
+  return '专属配置：待填写'
+}
+
+const pendingApplyAfterLogin = ref(false)
+
+const selectedCapNeedsConfig = computed(() => {
+  if (!selectedCap.value?.credential_schema?.enabled) return false
+  if (!isLoggedIn.value) return true
+  const existing = myMcpsList.value.find((m) => m.service_id === selectedCap.value?.id)
+  if (!existing) return true
+  return (
+    existing.credential_status === 'missing' ||
+    existing.credential_status === 'unbound' ||
+    existing.credential_status === 'invalid'
+  )
+})
+
+function goToConfigFromAccess() {
+  const capId = selectedCap.value?.id
+  accessModalVisible.value = false
+  if (capId) {
+    const existing = myMcpsList.value.find((m) => m.service_id === capId)
+    if (existing) {
+      openEditBindingDialog(existing)
+      return
+    }
+    void openDetailDrawer(capId)
+  }
+}
+
 function toggleToolSchema(toolName: string) {
   const next = new Set(expandedTools.value)
   if (next.has(toolName)) {
@@ -563,10 +627,12 @@ async function openDetailDrawer(id: string) {
 
 function openApplyModal() {
   if (!isLoggedIn.value) {
+    pendingApplyAfterLogin.value = true
     toast.info('提交功能权限申请需先登录小秘书工号')
     openEmployeeLogin()
     return
   }
+  pendingApplyAfterLogin.value = false
   if (selectedToolIdsForApply.value.size === 0) {
     toast.warning('请先勾选需要申请开通的功能')
     return
@@ -773,14 +839,6 @@ function handlePrimaryCopy() {
   }
 }
 
-function handleAuthAction() {
-  if (selectedCap.value?.auth_entry_url) {
-    window.open(selectedCap.value.auth_entry_url, '_blank', 'noopener,noreferrer')
-  } else {
-    toast.info('当前服务已接入平台统一认证托管，在 AI 助手首次发起调用时将自动完成校验。')
-  }
-}
-
 function handleGlobalKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
@@ -800,6 +858,12 @@ watch(
         openAccessModal(target)
       } else {
         openGlobalAccessModal()
+      }
+    }
+    if (isLoggedIn.value && pendingApplyAfterLogin.value) {
+      pendingApplyAfterLogin.value = false
+      if (currentDetail.value && selectedToolIdsForApply.value.size > 0) {
+        openApplyModal()
       }
     }
   }
@@ -1055,12 +1119,29 @@ onBeforeUnmount(() => {
             </div>
             <div class="cap-card__title-area">
               <div class="cap-card__name-row">
-                <h3 class="cap-name" :title="cap.name">{{ cap.name }}</h3>
-                <span
-                  class="status-indicator"
-                  :class="cap.status === 'active' ? 'is-active' : 'is-degraded'"
-                  :title="cap.status === 'active' ? '服务运行正常' : '服务可能降级'"
-                ></span>
+                <div class="cap-card__name-group">
+                  <h3 class="cap-name" :title="cap.name">{{ cap.name }}</h3>
+                  <span
+                    class="status-indicator"
+                    :class="cap.status === 'active' ? 'is-active' : 'is-degraded'"
+                    :title="cap.status === 'active' ? '服务运行正常' : '服务可能降级'"
+                  ></span>
+                </div>
+                <label
+                  v-if="isLoggedIn"
+                  class="cap-switch-inline"
+                  title="在我的助手中启用"
+                  @click.stop
+                >
+                  <span class="assembly-label">在我的助手中启用</span>
+                  <span class="compact-switch-box">
+                    <MdSwitch
+                      :model-value="cap.user_enabled !== false"
+                      :disabled="togglingServiceIds.has(cap.id)"
+                      @update:model-value="(val) => handleToggleServiceEnabled(cap.id, val)"
+                    />
+                  </span>
+                </label>
               </div>
               <div class="cap-card__tags">
                 <span class="category-pill">{{ cap.category || '通用' }}</span>
@@ -1088,16 +1169,6 @@ onBeforeUnmount(() => {
                 <span v-else>新上线</span>
               </div>
             </div>
-            <label v-if="isLoggedIn" class="cap-switch-inline" title="控制在我的助手工具列表中是否启用此能力">
-              <span class="assembly-label">在我的助手中启用</span>
-              <span class="compact-switch-box">
-                <MdSwitch
-                  :model-value="cap.user_enabled !== false"
-                  :disabled="togglingServiceIds.has(cap.id)"
-                  @update:model-value="(val) => handleToggleServiceEnabled(cap.id, val)"
-                />
-              </span>
-            </label>
           </div>
 
           <div class="cap-card__footer">
@@ -1216,10 +1287,11 @@ onBeforeUnmount(() => {
                 <span class="field-val mono break-all">{{ userClientConfig.token }}</span>
                 <MdButton
                   variant="tonal"
+                  class="copy-action-btn"
                   @click="copyText(`Bearer ${userClientConfig.token}`, 'Bearer Token')"
                 >
                   <Copy :size="14" />
-                  <span>复制 Bearer</span>
+                  <span>复制 Token</span>
                 </MdButton>
               </div>
             </div>
@@ -1251,24 +1323,18 @@ onBeforeUnmount(() => {
           <div class="natural-prompt-box">{{ generatedNaturalLanguagePrompt }}</div>
         </div>
 
-        <div class="auth-notice-card">
+        <div v-if="selectedCapNeedsConfig" class="auth-notice-card">
           <div class="auth-notice-left">
             <ShieldCheck :size="20" />
             <div>
-              <div class="auth-notice-title">
-                企业平台统一安全认证托管 · {{ selectedCap?.auth_label || 'Hub 统一认证' }}
-              </div>
+              <div class="auth-notice-title">需要填写专属配置</div>
               <p class="auth-notice-desc">
-                {{
-                  selectedCap?.auth_guide ||
-                  '接入后，所有高风险工具权限审批与个人下游账号凭据由企业能力引擎统一加密托管。'
-                }}
+                该能力包含需个人业务参数的工具，完成专属配置（加密托管）后即可正常调用。
               </p>
             </div>
           </div>
-          <MdButton variant="text" @click="handleAuthAction">
-            <ExternalLink :size="14" />
-            <span>{{ selectedCap?.auth_entry_url ? '前往统一认证' : '授权说明' }}</span>
+          <MdButton variant="tonal" size="sm" @click="goToConfigFromAccess">
+            <span>立即填写</span>
           </MdButton>
         </div>
       </div>
@@ -1424,6 +1490,9 @@ onBeforeUnmount(() => {
                     <span v-if="isToolGranted(tool)" class="granted-badge">
                       {{ isToolL0(tool) ? '公开可用' : '已获授权' }}
                     </span>
+                    <span v-if="tool.requires_credentials" class="cred-req-badge">
+                      需专属配置
+                    </span>
                   </div>
                   <p class="tool-biz-desc">{{ getToolBusinessDesc(tool) }}</p>
                 </div>
@@ -1437,10 +1506,47 @@ onBeforeUnmount(() => {
                   <ChevronDown v-else :size="14" />
                 </button>
               </div>
-              <pre
-                v-if="expandedTools.has(getToolKey(tool))"
-                class="tool-schema-pre"
-              ><code>{{ JSON.stringify(tool.input_schema || {}, null, 2) }}</code></pre>
+              <div v-if="expandedTools.has(getToolKey(tool))" class="tool-schema-human">
+                <div
+                  v-if="extractSchemaFields(tool.input_schema).length > 0"
+                  class="schema-field-list"
+                >
+                  <div
+                    v-for="field in extractSchemaFields(tool.input_schema)"
+                    :key="field.name"
+                    class="schema-field-row"
+                  >
+                    <div class="schema-field-head">
+                      <span class="schema-field-name mono">{{ field.name }}</span>
+                      <span :class="['schema-req-badge', field.required ? 'is-req' : 'is-opt']">
+                        {{ field.required ? '必填' : '可选' }}
+                      </span>
+                      <span class="schema-type-pill">{{ field.type }}</span>
+                    </div>
+                    <p class="schema-field-desc">{{ field.description }}</p>
+                    <div
+                      v-if="field.enumValues.length > 0 || field.defaultValue !== undefined"
+                      class="schema-field-meta"
+                    >
+                      <div v-if="field.enumValues.length > 0" class="schema-enum-list">
+                        <span class="meta-prefix">可选值：</span>
+                        <span v-for="opt in field.enumValues" :key="opt" class="schema-enum-chip">
+                          {{ opt }}
+                        </span>
+                      </div>
+                      <span v-if="field.defaultValue !== undefined" class="schema-default-tag">
+                        默认值：{{ field.defaultValue }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="schema-no-params">该工具无需入参</div>
+
+                <details class="raw-schema-details">
+                  <summary>查看原始 JSON Schema（开发者）</summary>
+                  <pre class="tool-schema-pre"><code>{{ JSON.stringify(tool.input_schema || {}, null, 2) }}</code></pre>
+                </details>
+              </div>
             </div>
           </div>
         </div>
@@ -1475,24 +1581,27 @@ onBeforeUnmount(() => {
           v-if="selectedRequiresCredentials && currentDetail.credential_schema"
           class="credential-section"
         >
+          <div class="credential-section-title">填写专属配置（加密托管）</div>
           <div class="credential-tip">
             {{
               currentDetail.credential_schema.instructions ||
-              '此服务要求绑定个人业务账号，所有已获批工具将共用此加密凭据。'
+              '此服务要求填写专属业务配置，所有已获批工具将共用此加密配置。'
             }}
           </div>
 
           <div v-if="currentServiceExistingBinding" class="credential-bound-card">
             <CheckCircle2 :size="16" />
             <span>
-              已绑定账号:
+              已填写专属配置:
               <strong>{{
-                currentServiceExistingBinding.credential_summary?.username || '已保存凭据'
+                currentServiceExistingBinding.credential_summary?.display_value ||
+                currentServiceExistingBinding.credential_summary?.username ||
+                '已保存'
               }}</strong>
               （本次申请将自动复用）
             </span>
             <MdButton variant="text" @click="showCustomCredInApply = !showCustomCredInApply">
-              {{ showCustomCredInApply ? '收起修改' : '修改凭据' }}
+              {{ showCustomCredInApply ? '收起修改' : '修改配置' }}
             </MdButton>
           </div>
 
@@ -1662,8 +1771,7 @@ onBeforeUnmount(() => {
             <div class="cred-info">
               <Key :size="14" />
               <span>
-                业务账号:
-                <strong>{{ item.credential_summary?.username || '未配置' }}</strong>
+                <strong>{{ getCredentialDisplayText(item) }}</strong>
                 <span v-if="isServiceUnavailable(item)" class="cred-msg danger">
                   （下游不可用{{ item.downstream_error ? `: ${item.downstream_error}` : '' }}）
                 </span>
@@ -1674,16 +1782,22 @@ onBeforeUnmount(() => {
                   （已保存，待调用验证）
                 </span>
                 <span v-else-if="item.credential_status === 'invalid'" class="cred-msg danger">
-                  （登录失效，请更新密码）
+                  （配置失效，请更新）
                 </span>
                 <span v-else-if="item.credential_status === 'unbound'" class="cred-msg danger">
                   （已解绑，调用已阻断）
                 </span>
-                <span v-else class="cred-msg warning">（未配置有效凭据）</span>
+                <span v-else class="cred-msg warning">（未填写专属配置）</span>
               </span>
             </div>
             <div class="cred-actions">
-              <MdButton variant="text" @click="openEditBindingDialog(item)">修改账号密码</MdButton>
+              <MdButton variant="text" @click="openEditBindingDialog(item)">
+                {{
+                  item.credential_status === 'missing' || item.credential_status === 'unbound'
+                    ? '填写配置'
+                    : '修改配置'
+                }}
+              </MdButton>
               <MdButton
                 v-if="
                   item.credential_status === 'saved' ||
@@ -2808,6 +2922,146 @@ onBeforeUnmount(() => {
   color: var(--md-sys-color-on-surface-variant);
   font-size: 12px;
   cursor: pointer;
+}
+
+.cap-card__name-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.copy-action-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.cred-req-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: 11px;
+  font-weight: 500;
+  background-color: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.tool-schema-human {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--md-sys-color-outline-variant);
+}
+
+.schema-field-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.schema-field-row {
+  padding: 8px 10px;
+  border-radius: var(--md-sys-shape-corner-small);
+  background-color: var(--md-sys-color-surface-container);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.schema-field-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.schema-field-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface);
+}
+
+.schema-req-badge {
+  padding: 1px 6px;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.schema-req-badge.is-req {
+  background-color: var(--sys-status-danger-bg);
+  color: var(--sys-status-danger-text);
+}
+
+.schema-req-badge.is-opt {
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.schema-type-pill {
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.schema-field-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  line-height: 1.45;
+}
+
+.schema-field-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.schema-enum-list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.schema-enum-chip {
+  padding: 1px 7px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background-color: var(--md-sys-color-surface-container-lowest);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface);
+}
+
+.schema-default-tag {
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.schema-no-params {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 4px 2px;
+}
+
+.raw-schema-details summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+  user-select: none;
+  margin-bottom: 6px;
+}
+
+.credential-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface);
 }
 
 .drawer-bottom-actions {

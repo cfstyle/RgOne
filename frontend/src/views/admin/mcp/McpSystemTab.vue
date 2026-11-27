@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { CheckCircle2, Database, RefreshCw, Server, ShieldCheck } from 'lucide-vue-next'
 import MdButton from '@/components/m3/MdButton.vue'
 import MdCard from '@/components/m3/MdCard.vue'
 import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
-import { getMcpErrorMessage, getSystemStatus, isMcpEngineUnavailable } from '@/api/mcp'
-import type { SystemStatusResponse } from '@/types/mcp'
+import { getMcpErrorMessage, getServices, getSystemStatus, isMcpEngineUnavailable } from '@/api/mcp'
+import type { McpService, SystemStatusResponse } from '@/types/mcp'
 
 const emit = defineEmits<{
   (e: 'engine-error', message: string): void
@@ -16,15 +16,30 @@ const toast = useToast()
 const authStore = useAuthStore()
 const loading = ref(true)
 const status = ref<SystemStatusResponse | null>(null)
+const services = ref<McpService[]>([])
+const lastCheckedAt = ref('')
 
 let abortController: AbortController | null = null
+
+const activeServicesCount = computed(
+  () => services.value.filter((s) => s.status === 'active').length
+)
+const abnormalServicesCount = computed(
+  () => services.value.filter((s) => s.status !== 'active').length
+)
 
 async function fetchStatus() {
   if (abortController) abortController.abort()
   abortController = new AbortController()
   loading.value = true
   try {
-    status.value = await getSystemStatus(abortController.signal)
+    const [statusRes, svcList] = await Promise.all([
+      getSystemStatus(abortController.signal),
+      getServices(undefined, abortController.signal).catch(() => []),
+    ])
+    status.value = statusRes
+    services.value = svcList
+    lastCheckedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === 'AbortError') return
     const msg = getMcpErrorMessage(err, '获取引擎状态失败')
@@ -48,8 +63,8 @@ onBeforeUnmount(() => {
   <div class="mcp-system-tab">
     <div class="tab-toolbar">
       <div>
-        <h2 class="tab-title">MCP 引擎运行状态与架构边界</h2>
-        <p class="tab-subtitle">下游引擎 hub-core 健康检查与 RgOne 统一管理员鉴权上下文</p>
+        <h2 class="tab-title">MCP 引擎运行状态与运维概览</h2>
+        <p class="tab-subtitle">下游引擎 hub-core 探活、协议模式与统一鉴权状态</p>
       </div>
       <MdButton variant="tonal" :disabled="loading" @click="fetchStatus">
         <RefreshCw :size="15" :class="{ 'is-spinning': loading }" />
@@ -94,24 +109,26 @@ onBeforeUnmount(() => {
       <MdCard variant="elevated">
         <div class="card-head">
           <ShieldCheck :size="18" />
-          <h3>RgOne 统一管理鉴权与解耦说明</h3>
+          <h3>运维状态与鉴权摘要</h3>
         </div>
         <div class="kv-list">
           <div class="kv-row">
-            <span>当前管理会话</span>
-            <strong>{{ authStore.adminUsername || 'admin' }}</strong>
+            <span>MCP 传输模式</span>
+            <span class="status-pill st-ok">Streamable HTTP · 无状态 (stateless_http)</span>
           </div>
           <div class="kv-row">
-            <span>管理端鉴权作用域</span>
-            <span class="mono">rgone_admin_token → /mcp-api/v1</span>
+            <span>RgOne 统一 JWT 鉴权</span>
+            <span class="status-pill st-ok">已打通（当前管理员：{{ authStore.adminUsername || 'admin' }}）</span>
           </div>
           <div class="kv-row">
-            <span>门户端鉴权作用域</span>
-            <span class="mono">rgone_emp_token → /mcp-api/v1/portal/*</span>
+            <span>下游服务在线 / 异常</span>
+            <strong>
+              在线 {{ activeServicesCount }} 个 · 异常 {{ abnormalServicesCount }} 个
+            </strong>
           </div>
           <div class="kv-row">
-            <span>部署边界</span>
-            <span>RgOne 与 hub-core 严格分进程、分库运行，经 Nginx 同源反代聚合</span>
+            <span>最近探活时间</span>
+            <span class="mono">{{ lastCheckedAt || '—' }}</span>
           </div>
         </div>
       </MdCard>
