@@ -2,8 +2,6 @@ export type ServiceStatus = 'active' | 'inactive' | 'degraded' | 'pending'
 
 export type RiskLevel = 'L0' | 'L1' | 'L2' | 'L3'
 
-export type TransportType = 'http' | 'sse' | 'stdio' | 'internal_rest'
-
 export type AuthMode = 'public' | 'platform_sso' | 'user_credential' | 'token' | 'none' | string
 
 export type CredentialStatus =
@@ -33,37 +31,42 @@ export interface ServiceCredentialSchema {
   auth_type: string
   instructions: string
   fields: CredentialFieldSchema[]
+  help_text?: string
 }
 
 export interface McpService {
   id: string
   name: string
   description: string
-  transport: TransportType
-  endpoint: string
+  endpoint_url: string
+  version: string
   owner: string
-  category?: string
-  version?: string
   status: ServiceStatus
-  tools_count: number
-  last_health_check_at?: string
-  created_at: string
+  category?: string
   auth_mode?: AuthMode
   auth_label?: string
   auth_guide?: string
   auth_entry_url?: string
   usage_examples?: string[]
   credential_schema?: ServiceCredentialSchema | null
-  trust_hub_credentials?: boolean
-  plugin_dir?: string | null
-  health_check_url?: string
+  trusted_credential_recipient?: boolean
+  trusted_credential_version?: string | null
+  trusted_credential_endpoint_url?: string | null
+  trusted_confirmed_by?: string | null
+  trusted_confirmed_at?: string | null
+  downstream_status?: 'available' | 'unavailable' | string
+  downstream_error?: string | null
+  created_at: string
+  updated_at: string
+  tools_count?: number
 }
 
 export interface ServiceRegistrationRequest {
+  service_id: string
   name: string
+  endpoint_url: string
+  version?: string
   description?: string
-  transport?: TransportType
-  endpoint: string
   owner?: string
   category?: string
   auth_mode?: AuthMode
@@ -72,16 +75,6 @@ export interface ServiceRegistrationRequest {
   auth_entry_url?: string
   usage_examples?: string[]
   credential_schema?: ServiceCredentialSchema | null
-  trust_hub_credentials?: boolean
-}
-
-export interface ServiceUpdateRequest {
-  name?: string
-  description?: string
-  endpoint?: string
-  owner?: string
-  status?: ServiceStatus
-  trust_hub_credentials?: boolean
 }
 
 export interface ServiceMetadataUpdateRequest {
@@ -94,101 +87,98 @@ export interface ServiceMetadataUpdateRequest {
   auth_guide?: string
   auth_entry_url?: string
   usage_examples?: string[]
-  trust_hub_credentials?: boolean
 }
 
 export interface RefreshResponse {
   service_id: string
   tools_discovered: number
   status: string
-  message?: string
 }
 
 export interface ConnectionTestResponse {
   service_id: string
+  endpoint_url?: string
   success: boolean
   latency_ms: number
+  tools_count?: number
+  error?: string
   message: string
-  tools_discovered?: number
 }
 
 export interface RegisteredTool {
   id: string
   service_id: string
-  service_name?: string
   name: string
   namespace_name: string
   description: string
+  input_schema: ToolInputSchema
   risk_level: RiskLevel
   requires_confirmation: boolean
   requires_credentials?: boolean
-  enabled: boolean
-  input_schema: ToolInputSchema
   created_at?: string
 }
 
 export interface ToolPolicyUpdateRequest {
-  risk_level?: RiskLevel
-  requires_confirmation?: boolean
-  requires_credentials?: boolean
-  enabled?: boolean
+  risk_level: RiskLevel
+  requires_confirmation: boolean
 }
 
 export interface ToolExecuteRequest {
-  service_id: string
-  tool_name: string
   arguments: Record<string, unknown>
-  confirmed?: boolean
 }
 
 export interface ToolExecuteResponse {
-  success: boolean
-  result: unknown
-  execution_time_ms: number
+  tool_name: string
+  service_id: string
+  status: 'success' | 'tool_error' | 'exception'
+  duration_ms: number
+  result?: unknown
   error?: string
-  raw?: unknown
+}
+
+export interface PortalTrendItem {
+  date: string
+  calls: number
+  success_calls: number
 }
 
 export interface DashboardSummary {
-  services_count: number
-  active_services_count: number
-  tools_count: number
-  enabled_tools_count: number
+  servers_total: number
+  servers_active: number
+  servers_inactive: number
+  servers_degraded: number
+  tools_total: number
   calls_total: number
   calls_success: number
   calls_failed: number
+  health_rate?: number
+  daily_trends?: PortalTrendItem[]
 }
 
 export interface AuditLog {
   id: string
-  trace_id: string
+  timestamp: string
+  user_id: string
+  client_id: string
   service_id: string
-  service_name?: string
   tool_name: string
-  namespace_name: string
-  caller: string
-  risk_level: RiskLevel
-  result_status: 'success' | 'error' | 'denied'
+  params_summary: Record<string, unknown>
+  result_status: string
   duration_ms: number
-  request_args?: string | Record<string, unknown>
-  response_summary?: string
-  error_message?: string
-  created_at: string
+  trace_id?: string
 }
 
 export interface AuditLogsResponse {
   items: AuditLog[]
   total: number
-  page: number
-  page_size: number
 }
 
 export interface AuditLogsParams {
   service_id?: string
   tool_name?: string
-  result_status?: string
-  page?: number
-  page_size?: number
+  status?: string
+  limit?: number
+  offset?: number
 }
 
 export interface SystemStatusResponse {
@@ -201,47 +191,26 @@ export interface SystemStatusResponse {
 }
 
 export interface PluginInspectResult {
-  id: string
+  valid: boolean
+  service_id: string
   name: string
   version: string
   description: string
-  category?: string
-  owner?: string
-  auth_mode?: string
-  auth_label?: string
-  auth_guide?: string
-  auth_entry_url?: string
-  runtime?: {
-    type?: string
-    command?: string[]
-    port?: number
-    health_check_path?: string
-    [key: string]: unknown
-  }
-  tools_count?: number
-  tools?: Array<{
+  author: string
+  port: number
+  tools: Array<{
     name: string
     description?: string
     risk_level?: string
     requires_credentials?: boolean
   }>
-  usage_examples?: string[]
-  credential_schema?: ServiceCredentialSchema | null
-  trust_hub_credentials?: boolean
-  manifest?: Record<string, unknown>
+  file_count: number
+  prefix: string
+  manifest: Record<string, unknown>
 }
 
-export interface PluginInstallResponse {
-  success: boolean
-  message: string
-  service_id: string
-  service?: McpService
-}
-
-export interface PortalTrendItem {
-  date: string
-  calls: number
-  success_calls: number
+export interface DeveloperGuideResponse {
+  content: string
 }
 
 export interface PortalOverview {

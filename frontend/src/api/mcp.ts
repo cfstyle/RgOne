@@ -4,6 +4,7 @@ import type {
   AuditLogsResponse,
   ConnectionTestResponse,
   DashboardSummary,
+  DeveloperGuideResponse,
   McpBindingResponse,
   McpService,
   McpToggleResponse,
@@ -11,7 +12,6 @@ import type {
   PermissionRequestCreate,
   PermissionRequestReview,
   PluginInspectResult,
-  PluginInstallResponse,
   PortalCapabilitiesQuery,
   PortalCapabilityCard,
   PortalCapabilityDetail,
@@ -21,9 +21,7 @@ import type {
   ServiceMetadataUpdateRequest,
   ServiceRegistrationRequest,
   ServiceStatus,
-  ServiceUpdateRequest,
   SystemStatusResponse,
-  ToolExecuteRequest,
   ToolExecuteResponse,
   ToolPolicyUpdateRequest,
   UserClientConfig,
@@ -425,7 +423,7 @@ export function getDashboardSummary(signal?: AbortSignal): Promise<DashboardSumm
 }
 
 export function getServices(
-  params?: { status?: string; transport?: string; q?: string },
+  params?: { status?: ServiceStatus },
   signal?: AbortSignal
 ): Promise<McpService[]> {
   return mcpFetch<McpService[]>('admin', '/services', {
@@ -439,17 +437,10 @@ export function getService(id: string, signal?: AbortSignal): Promise<McpService
 }
 
 export function registerService(data: ServiceRegistrationRequest): Promise<McpService> {
-  return mcpFetch<McpService>('admin', '/services', {
+  return mcpFetch<McpService>('admin', '/services/register', {
     method: 'POST',
     body: data,
     timeoutMs: 30_000,
-  })
-}
-
-export function updateService(id: string, data: ServiceUpdateRequest): Promise<McpService> {
-  return mcpFetch<McpService>('admin', `/services/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    body: data,
   })
 }
 
@@ -457,7 +448,7 @@ export function updateServiceMetadata(
   id: string,
   data: ServiceMetadataUpdateRequest
 ): Promise<McpService> {
-  return mcpFetch<McpService>('admin', `/services/${encodeURIComponent(id)}/metadata`, {
+  return mcpFetch<McpService>('admin', `/services/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: data,
   })
@@ -465,14 +456,15 @@ export function updateServiceMetadata(
 
 export function updateServiceStatus(id: string, status: ServiceStatus): Promise<McpService> {
   return mcpFetch<McpService>('admin', `/services/${encodeURIComponent(id)}/status`, {
-    method: 'PATCH',
+    method: 'PUT',
     body: { status },
   })
 }
 
-export function deleteService(id: string): Promise<void> {
-  return mcpFetch<void>('admin', `/services/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
+export function updateServiceCredentialTrust(id: string, trusted: boolean): Promise<McpService> {
+  return mcpFetch<McpService>('admin', `/services/${encodeURIComponent(id)}/credential-trust`, {
+    method: 'PUT',
+    body: { trusted },
   })
 }
 
@@ -486,7 +478,7 @@ export function refreshServiceTools(id: string): Promise<RefreshResponse> {
 export function testServiceConnection(id: string): Promise<ConnectionTestResponse> {
   return mcpFetch<ConnectionTestResponse>(
     'admin',
-    `/services/${encodeURIComponent(id)}/test-connection`,
+    `/services/${encodeURIComponent(id)}/test`,
     {
       method: 'POST',
       timeoutMs: 30_000,
@@ -494,8 +486,12 @@ export function testServiceConnection(id: string): Promise<ConnectionTestRespons
   )
 }
 
-export function downloadDeveloperGuide(): Promise<Blob> {
-  return mcpFetchBlob('admin', '/plugins/developer-guide')
+export function downloadPluginTemplate(): Promise<Blob> {
+  return mcpFetchBlob('admin', '/plugins/template/download')
+}
+
+export function getDeveloperGuide(signal?: AbortSignal): Promise<DeveloperGuideResponse> {
+  return mcpFetch<DeveloperGuideResponse>('admin', '/portal/docs/developer-guide', { signal })
 }
 
 export function inspectPluginZip(file: File): Promise<PluginInspectResult> {
@@ -508,10 +504,24 @@ export function inspectPluginZip(file: File): Promise<PluginInspectResult> {
   })
 }
 
-export function installPluginZip(file: File): Promise<PluginInstallResponse> {
+export function installPluginZip(
+  file: File,
+  meta?: {
+    service_id?: string
+    name?: string
+    description?: string
+    owner?: string
+    category?: string
+  }
+): Promise<McpService> {
   const formData = new FormData()
   formData.append('file', file)
-  return mcpFetch<PluginInstallResponse>('admin', '/plugins/install', {
+  if (meta?.service_id) formData.append('service_id', meta.service_id)
+  if (meta?.name) formData.append('name', meta.name)
+  if (meta?.description) formData.append('description', meta.description)
+  if (meta?.owner) formData.append('owner', meta.owner)
+  if (meta?.category) formData.append('category', meta.category)
+  return mcpFetch<McpService>('admin', '/plugins/publish', {
     method: 'POST',
     formData,
     timeoutMs: LONG_TIMEOUT_MS,
@@ -529,16 +539,19 @@ export function updateToolPolicy(
   id: string,
   data: ToolPolicyUpdateRequest
 ): Promise<RegisteredTool> {
-  return mcpFetch<RegisteredTool>('admin', `/tools/${encodeURIComponent(id)}`, {
+  return mcpFetch<RegisteredTool>('admin', `/tools/${encodeURIComponent(id)}/policy`, {
     method: 'PATCH',
     body: data,
   })
 }
 
-export function executeTool(data: ToolExecuteRequest): Promise<ToolExecuteResponse> {
-  return mcpFetch<ToolExecuteResponse>('admin', '/tools/execute', {
+export function executeTool(
+  toolId: string,
+  args: Record<string, unknown>
+): Promise<ToolExecuteResponse> {
+  return mcpFetch<ToolExecuteResponse>('admin', `/tools/${encodeURIComponent(toolId)}/test`, {
     method: 'POST',
-    body: data,
+    body: { arguments: args },
     timeoutMs: 60_000,
   })
 }

@@ -171,7 +171,7 @@ function buildArguments(): Record<string, unknown> {
 }
 
 async function handleExecute() {
-  if (!selectedServiceId.value || !selectedToolName.value) {
+  if (!selectedServiceId.value || !selectedToolName.value || !currentTool.value) {
     toast.warning('请先选择目标服务和工具')
     return
   }
@@ -188,18 +188,18 @@ async function handleExecute() {
     return
   }
 
+  const toolId =
+    currentTool.value.id ||
+    currentTool.value.namespace_name ||
+    `${selectedServiceId.value}__${selectedToolName.value}`
+
   executing.value = true
   try {
-    execResponse.value = await executeTool({
-      service_id: selectedServiceId.value,
-      tool_name: selectedToolName.value,
-      arguments: args,
-      confirmed: confirmed.value,
-    })
-    if (execResponse.value.success) {
-      toast.success(`执行成功 (${execResponse.value.execution_time_ms} ms)`)
+    execResponse.value = await executeTool(toolId, args)
+    if (execResponse.value.status === 'success') {
+      toast.success(`执行成功 (${execResponse.value.duration_ms} ms)`)
     } else {
-      toast.warning(execResponse.value.error || '执行返回异常')
+      toast.warning(execResponse.value.error || `执行返回状态: ${execResponse.value.status}`)
     }
   } catch (err: unknown) {
     toast.error(getMcpErrorMessage(err, '执行调用失败'))
@@ -368,9 +368,9 @@ onBeforeUnmount(() => {
           <div class="resp-title">
             <h3>调用响应结果</h3>
             <span v-if="execResponse" class="latency-pill">
-              <CheckCircle2 v-if="execResponse.success" :size="13" />
+              <CheckCircle2 v-if="execResponse.status === 'success'" :size="13" />
               <XCircle v-else :size="13" />
-              <span>{{ execResponse.execution_time_ms }} ms</span>
+              <span>{{ execResponse.status }} · {{ execResponse.duration_ms }} ms</span>
             </span>
           </div>
           <MdButton

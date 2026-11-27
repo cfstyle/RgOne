@@ -45,13 +45,9 @@ const savingPolicy = ref(false)
 const policyForm = reactive<{
   risk_level: RiskLevel
   requires_confirmation: boolean
-  requires_credentials: boolean
-  enabled: boolean
 }>({
   risk_level: 'L0',
   requires_confirmation: false,
-  requires_credentials: false,
-  enabled: true,
 })
 
 let abortController: AbortController | null = null
@@ -70,9 +66,10 @@ const filteredTools = computed(() => {
     if (selectedServiceId.value && tool.service_id !== selectedServiceId.value) return false
     const kw = searchKeyword.value.trim().toLowerCase()
     if (!kw) return true
+    const nsName = tool.namespace_name || `${tool.service_id}__${tool.name}`
     return (
       tool.name.toLowerCase().includes(kw) ||
-      tool.namespace_name.toLowerCase().includes(kw) ||
+      nsName.toLowerCase().includes(kw) ||
       (tool.description || '').toLowerCase().includes(kw)
     )
   })
@@ -99,23 +96,10 @@ async function fetchData() {
   }
 }
 
-async function toggleEnabled(tool: RegisteredTool, enabled: boolean) {
-  try {
-    const updated = await updateToolPolicy(tool.id, { enabled })
-    const idx = tools.value.findIndex((item) => item.id === tool.id)
-    if (idx >= 0) tools.value[idx] = updated
-    toast.success(enabled ? '工具已启用' : '工具已停用')
-  } catch (err: unknown) {
-    toast.error(getMcpErrorMessage(err, '更新工具状态失败'))
-  }
-}
-
 function openPolicyModal(tool: RegisteredTool) {
   selectedTool.value = tool
   policyForm.risk_level = tool.risk_level || 'L0'
   policyForm.requires_confirmation = Boolean(tool.requires_confirmation)
-  policyForm.requires_credentials = Boolean(tool.requires_credentials)
-  policyForm.enabled = Boolean(tool.enabled)
   policyModalVisible.value = true
 }
 
@@ -126,8 +110,6 @@ async function savePolicy() {
     const updated = await updateToolPolicy(selectedTool.value.id, {
       risk_level: policyForm.risk_level,
       requires_confirmation: policyForm.requires_confirmation,
-      requires_credentials: policyForm.requires_credentials,
-      enabled: policyForm.enabled,
     })
     const idx = tools.value.findIndex((item) => item.id === selectedTool.value?.id)
     if (idx >= 0) tools.value[idx] = updated
@@ -181,7 +163,6 @@ onBeforeUnmount(() => {
               <th>所属服务</th>
               <th>风险等级</th>
               <th>安全约束</th>
-              <th>启用状态</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -190,10 +171,10 @@ onBeforeUnmount(() => {
               <td>
                 <div class="tool-name-cell">
                   <strong>{{ tool.name }}</strong>
-                  <span class="mono sub-text">{{ tool.namespace_name }}</span>
+                  <span class="mono sub-text">{{ tool.namespace_name || `${tool.service_id}__${tool.name}` }}</span>
                 </div>
               </td>
-              <td>{{ tool.service_name || serviceMap.get(tool.service_id) || tool.service_id }}</td>
+              <td>{{ serviceMap.get(tool.service_id) || tool.service_id }}</td>
               <td>
                 <span class="risk-pill" :class="`risk-${tool.risk_level.toLowerCase()}`">
                   {{ tool.risk_level }}
@@ -205,12 +186,6 @@ onBeforeUnmount(() => {
                   <span v-if="tool.requires_credentials" class="tag-pill">需个人凭据</span>
                   <span v-if="!tool.requires_confirmation && !tool.requires_credentials">-</span>
                 </div>
-              </td>
-              <td>
-                <MdSwitch
-                  :model-value="tool.enabled"
-                  @update:model-value="(val) => toggleEnabled(tool, val)"
-                />
               </td>
               <td>
                 <div class="row-actions">
@@ -259,12 +234,10 @@ onBeforeUnmount(() => {
           <MdSwitch v-model="policyForm.requires_confirmation" />
         </div>
         <div class="switch-row">
-          <span>需要个人凭据 (requires_credentials)</span>
-          <MdSwitch v-model="policyForm.requires_credentials" />
-        </div>
-        <div class="switch-row">
-          <span>启用此工具 (enabled)</span>
-          <MdSwitch v-model="policyForm.enabled" />
+          <span>个人参数要求 (来自契约声明)</span>
+          <span class="tag-pill">
+            {{ selectedTool?.requires_credentials ? '需个人凭据' : '免个人凭据' }}
+          </span>
         </div>
       </div>
       <template #footer>

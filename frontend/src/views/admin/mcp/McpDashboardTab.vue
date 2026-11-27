@@ -20,8 +20,9 @@ import {
   getMcpErrorMessage,
   getServices,
   isMcpEngineUnavailable,
+  listTools,
 } from '@/api/mcp'
-import type { AuditLog, DashboardSummary, McpService } from '@/types/mcp'
+import type { AuditLog, DashboardSummary, McpService, RegisteredTool } from '@/types/mcp'
 
 export type McpAdminTabKey =
   | 'dashboard'
@@ -41,9 +42,18 @@ const toast = useToast()
 const loading = ref(true)
 const summary = ref<DashboardSummary | null>(null)
 const services = ref<McpService[]>([])
+const tools = ref<RegisteredTool[]>([])
 const recentLogs = ref<AuditLog[]>([])
 
 let abortController: AbortController | null = null
+
+const toolCountMap = computed(() => {
+  const map = new Map<string, number>()
+  for (const t of tools.value) {
+    map.set(t.service_id, (map.get(t.service_id) ?? 0) + 1)
+  }
+  return map
+})
 
 const successRate = computed(() => {
   if (!summary.value || summary.value.calls_total === 0) return '100%'
@@ -51,6 +61,15 @@ const successRate = computed(() => {
 })
 
 const dailyBuckets = computed(() => {
+  if (summary.value?.daily_trends?.length) {
+    return summary.value.daily_trends.map((item) => ({
+      date: item.date,
+      label: `${item.date.slice(5, 7)}/${item.date.slice(8, 10)}`,
+      total: item.calls,
+      success: item.success_calls,
+    }))
+  }
+
   const days: Array<{ date: string; label: string; total: number; success: number }> = []
   const now = new Date()
   for (let i = 6; i >= 0; i--) {
@@ -66,11 +85,11 @@ const dailyBuckets = computed(() => {
   }
   const byDate = new Map(days.map((item) => [item.date, item]))
   for (const log of recentLogs.value) {
-    const dayKey = (log.created_at || '').slice(0, 10)
+    const dayKey = (log.timestamp || '').slice(0, 10)
     const bucket = byDate.get(dayKey)
     if (bucket) {
       bucket.total += 1
-      if (log.result_status === 'success') bucket.success += 1
+      if (log.result_status.toLowerCase() === 'success') bucket.success += 1
     }
   }
   return days
@@ -87,18 +106,18 @@ async function loadData() {
 
   loading.value = true
   try {
-    const [sumRes, svcRes, auditRes] = await Promise.all([
+    const [sumRes, svcRes, toolRes, auditRes] = await Promise.all([
       getDashboardSummary(signal),
       getServices(undefined, signal),
-      getAuditLogs({ page: 1, page_size: 100 }, signal).catch(() => ({
+      listTools(undefined, signal).catch(() => []),
+      getAuditLogs({ limit: 100, offset: 0 }, signal).catch(() => ({
         items: [],
         total: 0,
-        page: 1,
-        page_size: 100,
       })),
     ])
     summary.value = sumRes
     services.value = svcRes
+    tools.value = toolRes
     recentLogs.value = auditRes.items || []
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === 'AbortError') return
@@ -149,9 +168,9 @@ onBeforeUnmount(() => {
             <Server :size="20" />
           </div>
           <div>
-            <div class="kpi-value">{{ loading ? '—' : summary?.services_count ?? 0 }}</div>
+            <div class="kpi-value">{{ loading ? '—' : summary?.servers_total ?? 0 }}</div>
             <div class="kpi-label">
-              已注册服务（在线 {{ summary?.active_services_count ?? 0 }}）
+              已注册服务（在线 {{ summary?.servers_active ?? 0 }}）
             </div>
           </div>
         </div>
@@ -163,9 +182,9 @@ onBeforeUnmount(() => {
             <Wrench :size="20" />
           </div>
           <div>
-            <div class="kpi-value">{{ loading ? '—' : summary?.tools_count ?? 0 }}</div>
+            <div class="kpi-value">{{ loading ? '—' : summary?.tools_total ?? 0 }}</div>
             <div class="kpi-label">
-              托管工具（已启用 {{ summary?.enabled_tools_count ?? 0 }}）
+              托管工具契约（健康率 {{ summary?.health_rate ?? 100 }}%）
             </div>
           </div>
         </div>
@@ -291,7 +310,7 @@ onBeforeUnmount(() => {
             <span class="mono svc-id">{{ svc.id }}</span>
           </div>
           <div class="svc-meta">
-            <span>{{ svc.transport }} · {{ svc.tools_count }} 个工具</span>
+            <span>Streamable HTTP · {{ svc.tools_count ?? toolCountMap.get(svc.id) ?? 0 }} 个工具</span>
             <span class="status-pill" :class="`st-${svc.status}`">{{ svc.status }}</span>
           </div>
         </div>

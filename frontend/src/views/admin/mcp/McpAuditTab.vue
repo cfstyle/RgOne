@@ -10,11 +10,12 @@ import { useToast } from '@/composables/useToast'
 import { getAuditLogs, getMcpErrorMessage, getServices, isMcpEngineUnavailable } from '@/api/mcp'
 import type { AuditLog, McpService } from '@/types/mcp'
 
-const resultStatusOptions: SelectOption[] = [
+const statusOptions: SelectOption[] = [
   { label: '全部状态', value: '' },
   { label: 'success', value: 'success' },
-  { label: 'error', value: 'error' },
-  { label: 'denied', value: 'denied' },
+  { label: 'tool_error', value: 'tool_error' },
+  { label: 'exception', value: 'exception' },
+  { label: 'rejected', value: 'rejected' },
 ]
 
 const emit = defineEmits<{
@@ -32,13 +33,15 @@ const pageSize = ref(20)
 const filters = reactive({
   service_id: '',
   tool_name: '',
-  result_status: '',
+  status: '',
 })
 
 const serviceOptions = computed<SelectOption[]>(() => [
   { label: '全部服务', value: '' },
   ...services.value.map((svc) => ({ label: svc.name, value: svc.id })),
 ])
+
+const serviceNameMap = computed(() => new Map(services.value.map((svc) => [svc.id, svc.name])))
 
 const detailModalVisible = ref(false)
 const activeLog = ref<AuditLog | null>(null)
@@ -55,9 +58,9 @@ async function fetchLogs() {
         {
           service_id: filters.service_id || undefined,
           tool_name: filters.tool_name.trim() || undefined,
-          result_status: filters.result_status || undefined,
-          page: page.value,
-          page_size: pageSize.value,
+          status: filters.status || undefined,
+          limit: pageSize.value,
+          offset: (page.value - 1) * pageSize.value,
         },
         abortController.signal
       ),
@@ -89,15 +92,8 @@ function handlePageChange(payload: { page: number; pageSize: number }) {
   void fetchLogs()
 }
 
-function formatArgs(args: string | Record<string, unknown> | undefined): string {
+function formatArgs(args: Record<string, unknown> | undefined): string {
   if (!args) return '{}'
-  if (typeof args === 'string') {
-    try {
-      return JSON.stringify(JSON.parse(args), null, 2)
-    } catch {
-      return args
-    }
-  }
   return JSON.stringify(args, null, 2)
 }
 
@@ -133,8 +129,8 @@ onBeforeUnmount(() => {
         </div>
 
         <MdSelect
-          v-model="filters.result_status"
-          :options="resultStatusOptions"
+          v-model="filters.status"
+          :options="statusOptions"
           size="sm"
           @change="handleSearch"
         />
@@ -156,9 +152,9 @@ onBeforeUnmount(() => {
           <thead>
             <tr>
               <th>时间</th>
-              <th>调用者</th>
+              <th>调用主体</th>
               <th>服务 / 工具</th>
-              <th>风险</th>
+              <th>客户端</th>
               <th>状态</th>
               <th>耗时</th>
               <th>详情</th>
@@ -167,20 +163,23 @@ onBeforeUnmount(() => {
           <tbody>
             <tr v-for="item in logs" :key="item.id">
               <td class="mono sub-text">
-                {{ item.created_at ? item.created_at.slice(0, 19).replace('T', ' ') : '-' }}
+                {{ item.timestamp ? item.timestamp.slice(0, 19).replace('T', ' ') : '-' }}
               </td>
-              <td>{{ item.caller }}</td>
+              <td>{{ item.user_id || '-' }}</td>
               <td>
                 <div class="tool-cell">
                   <strong>{{ item.tool_name }}</strong>
-                  <span class="sub-text">{{ item.service_name || item.service_id }}</span>
+                  <span class="sub-text">{{ serviceNameMap.get(item.service_id) || item.service_id }}</span>
                 </div>
               </td>
               <td>
-                <span class="tag-pill">{{ item.risk_level }}</span>
+                <span class="tag-pill">{{ item.client_id || '-' }}</span>
               </td>
               <td>
-                <span class="status-pill" :class="`st-${item.result_status}`">
+                <span
+                  class="status-pill"
+                  :class="item.result_status.toLowerCase() === 'success' ? 'st-success' : 'st-error'"
+                >
                   {{ item.result_status }}
                 </span>
               </td>
@@ -212,21 +211,14 @@ onBeforeUnmount(() => {
     <AdaptiveModal v-model="detailModalVisible" title="调用审计详情" max-width="640px">
       <div v-if="activeLog" class="audit-detail">
         <div class="kv-grid">
-          <div><span>Trace ID:</span> <span class="mono">{{ activeLog.trace_id }}</span></div>
-          <div><span>调用者:</span> {{ activeLog.caller }}</div>
-          <div><span>工具:</span> <span class="mono">{{ activeLog.namespace_name || activeLog.tool_name }}</span></div>
+          <div><span>Trace ID:</span> <span class="mono">{{ activeLog.trace_id || '-' }}</span></div>
+          <div><span>调用主体:</span> {{ activeLog.user_id }} ({{ activeLog.client_id }})</div>
+          <div><span>服务 / 工具:</span> <span class="mono">{{ activeLog.service_id }} / {{ activeLog.tool_name }}</span></div>
           <div><span>状态 / 耗时:</span> {{ activeLog.result_status }} ({{ activeLog.duration_ms }} ms)</div>
         </div>
         <div class="detail-block">
-          <strong>请求参数 (Arguments)</strong>
-          <pre class="detail-pre"><code>{{ formatArgs(activeLog.request_args) }}</code></pre>
-        </div>
-        <div v-if="activeLog.response_summary" class="detail-block">
-          <strong>响应摘要</strong>
-          <pre class="detail-pre"><code>{{ activeLog.response_summary }}</code></pre>
-        </div>
-        <div v-if="activeLog.error_message" class="error-box">
-          <strong>错误信息:</strong> {{ activeLog.error_message }}
+          <strong>脱敏入参 (Params Summary)</strong>
+          <pre class="detail-pre"><code>{{ formatArgs(activeLog.params_summary) }}</code></pre>
         </div>
       </div>
       <template #footer>

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   Activity,
+  BookOpen,
   Download,
   Edit3,
   Eye,
@@ -10,24 +11,17 @@ import {
   Power,
   RefreshCw,
   Search,
-  Trash2,
   Upload,
 } from 'lucide-vue-next'
 import AdaptiveModal from '@/components/m3/AdaptiveModal.vue'
 import MdButton from '@/components/m3/MdButton.vue'
 import MdCard from '@/components/m3/MdCard.vue'
 import MdDrawer from '@/components/m3/MdDrawer.vue'
-import MdSelect, { type SelectOption } from '@/components/m3/MdSelect.vue'
 import MdSwitch from '@/components/m3/MdSwitch.vue'
-
-const transportOptions: SelectOption[] = [
-  { label: 'Streamable HTTP (http)', value: 'http' },
-  { label: 'SSE (sse)', value: 'sse' },
-]
 import { useToast } from '@/composables/useToast'
 import {
-  deleteService,
-  downloadDeveloperGuide,
+  downloadPluginTemplate,
+  getDeveloperGuide,
   getMcpErrorMessage,
   getService,
   getServices,
@@ -38,6 +32,7 @@ import {
   refreshServiceTools,
   registerService,
   testServiceConnection,
+  updateServiceCredentialTrust,
   updateServiceMetadata,
   updateServiceStatus,
 } from '@/api/mcp'
@@ -46,7 +41,6 @@ import type {
   PluginInspectResult,
   RegisteredTool,
   ServiceStatus,
-  TransportType,
 } from '@/types/mcp'
 
 const props = defineProps<{
@@ -63,6 +57,7 @@ const emit = defineEmits<{
 const toast = useToast()
 const loading = ref(true)
 const services = ref<McpService[]>([])
+const allTools = ref<RegisteredTool[]>([])
 const searchKeyword = ref('')
 const statusFilter = ref<'all' | ServiceStatus>('all')
 const busyIds = ref<Set<string>>(new Set())
@@ -70,19 +65,10 @@ const busyIds = ref<Set<string>>(new Set())
 // 注册远程服务弹窗
 const registerModalVisible = ref(false)
 const registering = ref(false)
-const registerForm = reactive<{
-  name: string
-  transport: TransportType
-  endpoint: string
-  owner: string
-  category: string
-  description: string
-  auth_mode: string
-  auth_label: string
-}>({
+const registerForm = reactive({
+  service_id: '',
   name: '',
-  transport: 'http',
-  endpoint: '',
+  endpoint_url: '',
   owner: '',
   category: '通用',
   description: '',
@@ -95,8 +81,11 @@ const publishModalVisible = ref(false)
 const pluginFile = ref<File | null>(null)
 const inspectingPlugin = ref(false)
 const installingPlugin = ref(false)
-const downloadingGuide = ref(false)
+const downloadingTemplate = ref(false)
 const inspectResult = ref<PluginInspectResult | null>(null)
+const guideModalVisible = ref(false)
+const loadingGuide = ref(false)
+const guideContent = ref('')
 
 // 服务详情抽屉
 const detailDrawerVisible = ref(false)
@@ -122,6 +111,18 @@ const editForm = reactive({
 })
 
 let abortController: AbortController | null = null
+
+const toolCountMap = computed(() => {
+  const map = new Map<string, number>()
+  for (const t of allTools.value) {
+    map.set(t.service_id, (map.get(t.service_id) ?? 0) + 1)
+  }
+  return map
+})
+
+function getToolCount(svc: McpService): number {
+  return svc.tools_count ?? toolCountMap.value.get(svc.id) ?? 0
+}
 
 const filteredServices = computed(() => {
   return services.value.filter((svc) => {
@@ -151,7 +152,12 @@ async function fetchServices() {
   abortController = new AbortController()
   loading.value = true
   try {
-    services.value = await getServices(undefined, abortController.signal)
+    const [svcList, toolList] = await Promise.all([
+      getServices(undefined, abortController.signal),
+      listTools(undefined, abortController.signal).catch(() => []),
+    ])
+    services.value = svcList
+    allTools.value = toolList
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === 'AbortError') return
     const msg = getMcpErrorMessage(err, '获取服务列表失败')
@@ -228,42 +234,24 @@ async function handleToggleStatus(svc: McpService) {
   }
 }
 
-async function handleToggleTrustCredentials(svc: McpService, trust: boolean) {
+async function handleToggleTrustCredentials(svc: McpService, trusted: boolean) {
   setBusy(svc.id, true)
   try {
-    const updated = await updateServiceMetadata(svc.id, { trust_hub_credentials: trust })
+    const updated = await updateServiceCredentialTrust(svc.id, trusted)
     currentService.value = updated
-    toast.success(trust ? '已启用凭据信任透传' : '已关闭凭据信任透传')
+    toast.success(trusted ? '已允许个人参数透传' : '已关闭个人参数透传')
     await fetchServices()
   } catch (err: unknown) {
-    toast.error(getMcpErrorMessage(err, '更新信任策略失败'))
-  } finally {
-    setBusy(svc.id, false)
-  }
-}
-
-async function handleDelete(svc: McpService) {
-  if (!window.confirm(`确定永久注销服务「${svc.name}」？此操作不可撤销。`)) return
-  setBusy(svc.id, true)
-  try {
-    await deleteService(svc.id)
-    toast.success('服务已注销')
-    if (currentService.value?.id === svc.id) {
-      detailDrawerVisible.value = false
-      currentService.value = null
-    }
-    await fetchServices()
-  } catch (err: unknown) {
-    toast.error(getMcpErrorMessage(err, '注销失败'))
+    toast.error(getMcpErrorMessage(err, '更新参数透传信任策略失败'))
   } finally {
     setBusy(svc.id, false)
   }
 }
 
 function openRegisterModal() {
+  registerForm.service_id = ''
   registerForm.name = ''
-  registerForm.transport = 'http'
-  registerForm.endpoint = ''
+  registerForm.endpoint_url = ''
   registerForm.owner = ''
   registerForm.category = '通用'
   registerForm.description = ''
@@ -273,16 +261,23 @@ function openRegisterModal() {
 }
 
 async function handleSubmitRegister() {
-  if (!registerForm.name.trim() || !registerForm.endpoint.trim()) {
-    toast.warning('请填写服务名称和接入地址 (Endpoint)')
+  const serviceId = registerForm.service_id.trim()
+  const name = registerForm.name.trim()
+  const endpointUrl = registerForm.endpoint_url.trim()
+  if (!serviceId || !name || !endpointUrl) {
+    toast.warning('请填写服务标识、服务名称与接入地址 (Endpoint URL)')
+    return
+  }
+  if (!/^[a-z][a-z0-9_-]{1,62}$/.test(serviceId)) {
+    toast.warning('服务标识必须小写字母开头，仅含小写字母、数字、下划线或连字符（2-63位）')
     return
   }
   registering.value = true
   try {
     await registerService({
-      name: registerForm.name.trim(),
-      transport: registerForm.transport,
-      endpoint: registerForm.endpoint.trim(),
+      service_id: serviceId,
+      name,
+      endpoint_url: endpointUrl,
       owner: registerForm.owner.trim() || undefined,
       category: registerForm.category.trim() || '通用',
       description: registerForm.description.trim() || undefined,
@@ -305,23 +300,37 @@ function openPublishModal() {
   publishModalVisible.value = true
 }
 
-async function handleDownloadGuide() {
-  downloadingGuide.value = true
+async function handleDownloadTemplate() {
+  downloadingTemplate.value = true
   try {
-    const blob = await downloadDeveloperGuide()
+    const blob = await downloadPluginTemplate()
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = 'mcp-plugin-developer-guide.zip'
+    link.download = 'python-mcp-demo.zip'
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
-    toast.success('已下载开发者规范包')
+    toast.success('已下载插件脚手架模板 (python-mcp-demo.zip)')
   } catch (err: unknown) {
-    toast.error(getMcpErrorMessage(err, '下载失败'))
+    toast.error(getMcpErrorMessage(err, '下载模板失败'))
   } finally {
-    downloadingGuide.value = false
+    downloadingTemplate.value = false
+  }
+}
+
+async function handleOpenGuide() {
+  guideModalVisible.value = true
+  if (guideContent.value) return
+  loadingGuide.value = true
+  try {
+    const res = await getDeveloperGuide()
+    guideContent.value = res.content || '暂无开发规范文档'
+  } catch (err: unknown) {
+    toast.error(getMcpErrorMessage(err, '加载开发规范失败'))
+  } finally {
+    loadingGuide.value = false
   }
 }
 
@@ -348,12 +357,12 @@ async function handleInstallPlugin() {
   if (!pluginFile.value) return
   installingPlugin.value = true
   try {
-    const res = await installPluginZip(pluginFile.value)
-    toast.success(res.message || '插件发布安装成功')
+    const svc = await installPluginZip(pluginFile.value)
+    toast.success(`插件「${svc.name}」(${svc.id}) 发布上线成功`)
     publishModalVisible.value = false
     await fetchServices()
   } catch (err: unknown) {
-    toast.error(getMcpErrorMessage(err, '插件安装失败'))
+    toast.error(getMcpErrorMessage(err, '插件发布失败'))
   } finally {
     installingPlugin.value = false
   }
@@ -506,12 +515,12 @@ onBeforeUnmount(() => {
                 </div>
               </td>
               <td>
-                <span class="tag-pill">{{ svc.transport }}</span>
+                <span class="tag-pill">Streamable HTTP</span>
               </td>
               <td>
-                <span class="mono endpoint-text">{{ svc.endpoint }}</span>
+                <span class="mono endpoint-text">{{ svc.endpoint_url }}</span>
               </td>
-              <td>{{ svc.tools_count }}</td>
+              <td>{{ getToolCount(svc) }}</td>
               <td>
                 <span class="status-pill" :class="`st-${svc.status}`">{{ svc.status }}</span>
               </td>
@@ -545,14 +554,6 @@ onBeforeUnmount(() => {
                     <Power :size="14" />
                     <span>{{ svc.status === 'active' ? '停用' : '启用' }}</span>
                   </MdButton>
-                  <MdButton
-                    variant="text"
-                    :disabled="busyIds.has(svc.id)"
-                    @click="handleDelete(svc)"
-                  >
-                    <Trash2 :size="14" />
-                    <span>注销</span>
-                  </MdButton>
                 </div>
               </td>
             </tr>
@@ -564,28 +565,25 @@ onBeforeUnmount(() => {
     <!-- 注册远程服务弹窗 -->
     <AdaptiveModal v-model="registerModalVisible" title="注册远程 MCP Service" max-width="600px">
       <div class="form-grid">
-        <div class="form-item">
-          <label class="form-label">服务名称 *</label>
-          <input v-model="registerForm.name" type="text" placeholder="如：财务知识助手" class="form-input" />
-        </div>
         <div class="form-row-2">
           <div class="form-item">
-            <label class="form-label">传输协议</label>
-            <MdSelect
-              v-model="registerForm.transport"
-              :options="transportOptions"
-              style="width: 100%"
+            <label class="form-label">服务唯一标识 (Service ID) *</label>
+            <input
+              v-model="registerForm.service_id"
+              type="text"
+              placeholder="如：finance, ticm (小写字母开头)"
+              class="form-input mono"
             />
           </div>
           <div class="form-item">
-            <label class="form-label">分类标签</label>
-            <input v-model="registerForm.category" type="text" placeholder="通用 / 业务 / 知识" class="form-input" />
+            <label class="form-label">服务显示名称 *</label>
+            <input v-model="registerForm.name" type="text" placeholder="如：财务知识助手" class="form-input" />
           </div>
         </div>
         <div class="form-item">
-          <label class="form-label">上游端点 URL *</label>
+          <label class="form-label">上游端点 URL (Streamable HTTP) *</label>
           <input
-            v-model="registerForm.endpoint"
+            v-model="registerForm.endpoint_url"
             type="text"
             placeholder="http://my-mcp-server:8090/mcp"
             class="form-input mono"
@@ -593,13 +591,17 @@ onBeforeUnmount(() => {
         </div>
         <div class="form-row-2">
           <div class="form-item">
+            <label class="form-label">分类标签</label>
+            <input v-model="registerForm.category" type="text" placeholder="通用 / 业务 / 知识" class="form-input" />
+          </div>
+          <div class="form-item">
             <label class="form-label">负责人</label>
             <input v-model="registerForm.owner" type="text" placeholder="团队或负责人" class="form-input" />
           </div>
-          <div class="form-item">
-            <label class="form-label">认证标签</label>
-            <input v-model="registerForm.auth_label" type="text" placeholder="Hub 统一认证" class="form-input" />
-          </div>
+        </div>
+        <div class="form-item">
+          <label class="form-label">认证标签</label>
+          <input v-model="registerForm.auth_label" type="text" placeholder="Hub 统一认证" class="form-input" />
         </div>
         <div class="form-item">
           <label class="form-label">业务描述</label>
@@ -625,11 +627,17 @@ onBeforeUnmount(() => {
     <AdaptiveModal v-model="publishModalVisible" title="ZIP 插件包一键发布" max-width="620px">
       <div class="publish-panel">
         <div class="guide-banner">
-          <span>不熟悉包结构？可先下载规范模板包查看 `manifest.json` 示例。</span>
-          <MdButton variant="tonal" :disabled="downloadingGuide" @click="handleDownloadGuide">
-            <Download :size="14" />
-            <span>{{ downloadingGuide ? '下载中...' : '下载规范包' }}</span>
-          </MdButton>
+          <span>不熟悉包结构？可下载脚手架模板包（含 manifest.json 示例）或阅读规范。</span>
+          <div class="guide-banner-actions">
+            <MdButton variant="text" @click="handleOpenGuide">
+              <BookOpen :size="14" />
+              <span>开发规范</span>
+            </MdButton>
+            <MdButton variant="tonal" :disabled="downloadingTemplate" @click="handleDownloadTemplate">
+              <Download :size="14" />
+              <span>{{ downloadingTemplate ? '下载中...' : '下载脚手架 (.zip)' }}</span>
+            </MdButton>
+          </div>
         </div>
 
         <label class="upload-dropzone">
@@ -641,9 +649,9 @@ onBeforeUnmount(() => {
         <div v-if="inspectingPlugin" class="empty-box">正在校验插件清单与目录结构...</div>
         <MdCard v-else-if="inspectResult" variant="tonal">
           <div class="inspect-summary">
-            <div><strong>插件名称:</strong> {{ inspectResult.name }} ({{ inspectResult.id }})</div>
-            <div><strong>版本:</strong> v{{ inspectResult.version }}</div>
-            <div><strong>分类 / 认证:</strong> {{ inspectResult.category || '通用' }} · {{ inspectResult.auth_label || 'Hub 统一认证' }}</div>
+            <div><strong>插件名称:</strong> {{ inspectResult.name }} ({{ inspectResult.service_id }})</div>
+            <div><strong>版本 / 维护方:</strong> v{{ inspectResult.version }} · {{ inspectResult.author || '未署名' }}</div>
+            <div><strong>声明工具数:</strong> {{ inspectResult.tools?.length || 0 }} 个</div>
             <div v-if="inspectResult.description"><strong>说明:</strong> {{ inspectResult.description }}</div>
           </div>
         </MdCard>
@@ -689,18 +697,22 @@ onBeforeUnmount(() => {
           </div>
           <p class="detail-desc">{{ currentService.description || '暂无描述' }}</p>
           <div class="detail-kv-grid">
-            <div><span>协议:</span> {{ currentService.transport }}</div>
-            <div><span>端点:</span> <span class="mono">{{ currentService.endpoint }}</span></div>
+            <div><span>协议:</span> Streamable HTTP</div>
+            <div><span>端点:</span> <span class="mono">{{ currentService.endpoint_url }}</span></div>
+            <div><span>版本:</span> v{{ currentService.version || '0.0.0' }}</div>
+            <div><span>工具数:</span> {{ serviceTools.length }}</div>
             <div><span>分类:</span> {{ currentService.category || '通用' }}</div>
             <div><span>状态:</span> {{ currentService.status }}</div>
           </div>
           <div class="trust-row">
             <div>
-              <strong>信任 Hub 鉴权透传 (trust_hub_credentials)</strong>
-              <p>开启后，下游托管服务可直接信赖网关下发的工号上下文。</p>
+              <strong>允许个人参数透传</strong>
+              <p>
+                开启后，网关才会将员工在前台加密托管的个人业务参数（如账号/密码/Token）透传给该服务；若服务版本或地址变更，信任状态会自动重置。
+              </p>
             </div>
             <MdSwitch
-              :model-value="Boolean(currentService.trust_hub_credentials)"
+              :model-value="Boolean(currentService.trusted_credential_recipient)"
               @update:model-value="(val) => currentService && handleToggleTrustCredentials(currentService, val)"
             />
           </div>
@@ -711,14 +723,15 @@ onBeforeUnmount(() => {
           <div v-if="!serviceTools.length" class="empty-box">暂无已发现工具</div>
           <div v-else class="tool-rows">
             <div v-for="t in serviceTools" :key="t.id" class="tool-row">
-              <div>
+              <div class="tool-row-main">
                 <div class="tool-title">
                   <strong>{{ t.name }}</strong>
                   <span class="tag-pill">{{ t.risk_level }}</span>
+                  <span v-if="t.requires_credentials" class="tag-pill">需个人凭据</span>
                 </div>
                 <p class="tool-desc">{{ t.description || '无描述' }}</p>
               </div>
-              <div class="row-actions">
+              <div class="tool-row-actions">
                 <MdButton
                   variant="text"
                   @click="
@@ -743,6 +756,17 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </MdDrawer>
+
+    <!-- 开发规范文档弹窗 -->
+    <AdaptiveModal v-model="guideModalVisible" title="MCP 插件开发与发布规范" max-width="760px">
+      <div v-if="loadingGuide" class="empty-box">正在加载开发规范文档...</div>
+      <pre v-else class="schema-pre"><code>{{ guideContent }}</code></pre>
+      <template #footer>
+        <div class="modal-footer-actions">
+          <MdButton variant="filled" @click="guideModalVisible = false">关闭</MdButton>
+        </div>
+      </template>
+    </AdaptiveModal>
 
     <!-- 编辑元数据弹窗 -->
     <AdaptiveModal v-model="editModalVisible" title="编辑服务门户元数据" max-width="600px">
@@ -997,6 +1021,14 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
+.guide-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .upload-dropzone {
   display: flex;
   flex-direction: column;
@@ -1090,6 +1122,19 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
   border-radius: var(--md-sys-shape-corner-small);
   background-color: var(--md-sys-color-surface-container-low);
+}
+
+.tool-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-row-actions {
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .tool-title {
