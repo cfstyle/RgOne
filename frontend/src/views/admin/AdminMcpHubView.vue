@@ -118,7 +118,7 @@ watch(
           <ServerCrash :size="28" />
         </div>
         <div class="engine-down-copy">
-          <h3>MCP 能力引擎暂不可用</h3>
+          <h3>MCP 能力引擎连接受阻</h3>
           <p>
             {{ engineErrorMessage || '无法连接 hub-core（/mcp-api/v1），RgOne 管理端其他功能运行正常。' }}
           </p>

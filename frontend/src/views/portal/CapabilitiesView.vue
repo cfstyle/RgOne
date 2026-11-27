@@ -31,7 +31,6 @@ import {
   Shield,
   ShieldCheck,
   Sparkles,
-  User,
   Wrench,
   X,
   Zap,
@@ -862,10 +861,6 @@ onBeforeUnmount(() => {
             }}</span>
           </MdButton>
         </template>
-        <MdButton v-else variant="tonal" @click="openEmployeeLogin">
-          <User :size="15" />
-          <span>小秘书登录</span>
-        </MdButton>
         <MdButton variant="text" @click="guideModalVisible = true">
           <BookOpen :size="15" />
           <span>接入指引</span>
@@ -1081,26 +1076,27 @@ onBeforeUnmount(() => {
           </p>
 
           <div class="cap-card__metrics">
-            <div class="metric-item">
-              <Wrench :size="14" />
-              <span>包含 <strong>{{ cap.tools_count }}</strong> 个工具</span>
+            <div class="metrics-left">
+              <div class="metric-item">
+                <Wrench :size="14" />
+                <span>包含 <strong>{{ cap.tools_count }}</strong> 个工具</span>
+              </div>
+              <div class="metric-item">
+                <Activity :size="14" />
+                <span v-if="cap.call_count > 0">累计调用 <strong>{{ cap.call_count }}</strong> 次</span>
+                <span v-else>新上线</span>
+              </div>
             </div>
-            <div class="metric-item">
-              <Activity :size="14" />
-              <span v-if="cap.call_count > 0">累计调用 <strong>{{ cap.call_count }}</strong> 次</span>
-              <span v-else>新上线</span>
-            </div>
-          </div>
-
-          <div class="cap-assembly-row">
-            <span class="assembly-label">
-              个人装配开关：{{ cap.user_enabled !== false ? '已启用' : '已停用' }}
-            </span>
-            <MdSwitch
-              :model-value="cap.user_enabled !== false"
-              :disabled="togglingServiceIds.has(cap.id)"
-              @update:model-value="(val) => handleToggleServiceEnabled(cap.id, val)"
-            />
+            <label v-if="isLoggedIn" class="cap-switch-inline" title="控制在我的助手工具列表中是否启用此能力">
+              <span class="assembly-label">在我的助手中启用</span>
+              <span class="compact-switch-box">
+                <MdSwitch
+                  :model-value="cap.user_enabled !== false"
+                  :disabled="togglingServiceIds.has(cap.id)"
+                  @update:model-value="(val) => handleToggleServiceEnabled(cap.id, val)"
+                />
+              </span>
+            </label>
           </div>
 
           <div class="cap-card__footer">
@@ -2300,11 +2296,19 @@ onBeforeUnmount(() => {
 .cap-card__metrics {
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
   padding-top: 8px;
   border-top: 1px solid var(--md-sys-color-outline-variant);
   font-size: 12px;
   color: var(--md-sys-color-on-surface-variant);
+}
+
+.metrics-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .metric-item {
@@ -2981,19 +2985,29 @@ onBeforeUnmount(() => {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-.cap-assembly-row {
-  display: flex;
+.cap-switch-inline {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: var(--md-sys-shape-corner-small);
-  background-color: var(--md-sys-color-surface-container-low);
+  gap: 6px;
+  cursor: pointer;
 }
 
 .assembly-label {
   font-size: 12px;
   color: var(--md-sys-color-on-surface-variant);
+}
+
+.compact-switch-box {
+  display: inline-flex;
+  align-items: center;
+  width: 38px;
+  height: 24px;
+  justify-content: flex-end;
+}
+
+.compact-switch-box :deep(.m3-switch) {
+  transform: scale(0.74);
+  transform-origin: right center;
 }
 
 .my-mcp-header-right {

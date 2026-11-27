@@ -1,5 +1,4 @@
 import { useAuthStore } from '@/stores/auth'
-import router from '@/router'
 import type {
   AuditLogsParams,
   AuditLogsResponse,
@@ -91,21 +90,23 @@ function getScopedToken(scope: McpAuthScope): string {
   return localStorage.getItem('rgone_emp_token') || ''
 }
 
-function handleUnauthorized(scope: McpAuthScope): void {
-  const authStore = useAuthStore()
+function handleUnauthorized(scope: McpAuthScope): McpEngineError {
   if (scope === 'admin') {
-    authStore.logoutAdmin()
-    if (router.currentRoute.value.path !== '/admin/dashboard') {
-      void router.push('/admin/dashboard')
-    }
-    return
+    // 禁止因为下游 hub-core 密钥未对齐或 401 而踢出 RgOne 主站管理员，改为在 MCP 治理区域内联降级提示
+    return new McpEngineError(
+      'MCP 引擎鉴权未通过（401），请核对 HUB_RGONE_JWT_SECRET 与 RgOne 的 JWT_SECRET 是否一致',
+      401,
+      true
+    )
   }
+  const authStore = useAuthStore()
   authStore.logoutEmployee()
   window.dispatchEvent(
     new CustomEvent('rgone:open-login', {
       detail: { mode: 'employee' },
     })
   )
+  return new McpEngineError('登录状态已失效，请重新登录', 401, false)
 }
 
 function buildUrl(
@@ -207,8 +208,7 @@ async function mcpFetch<T>(
     })
 
     if (response.status === 401) {
-      handleUnauthorized(scope)
-      throw new McpEngineError('登录状态已失效，请重新登录', 401, false)
+      throw handleUnauthorized(scope)
     }
 
     if (ENGINE_DOWN_STATUS_CODES.has(response.status)) {
@@ -275,8 +275,7 @@ async function mcpFetchBlob(scope: McpAuthScope, path: string): Promise<Blob> {
   try {
     const response = await fetch(url, { method: 'GET', headers, signal })
     if (response.status === 401) {
-      handleUnauthorized(scope)
-      throw new McpEngineError('登录状态已失效，请重新登录', 401, false)
+      throw handleUnauthorized(scope)
     }
     if (ENGINE_DOWN_STATUS_CODES.has(response.status)) {
       throw new McpEngineError(`能力引擎暂不可用 (HTTP ${response.status})`, response.status, true)

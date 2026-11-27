@@ -138,7 +138,7 @@ onUnmounted(() => {
 .m3-drawer-scrim {
   position: absolute;
   inset: 0;
-  z-index: var(--z-backdrop, 40);
+  z-index: 1;
   background-color: var(--md-sys-color-scrim, rgba(0, 0, 0, 0.45));
   opacity: 0.45;
   transition: opacity 0.3s ease;
@@ -158,7 +158,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  z-index: 1;
+  z-index: 2;
 }
 
 /* 顶部固定标题栏 */

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
+  BookOpen,
   CheckCircle2,
   Clock,
   Copy,
@@ -15,7 +16,6 @@ import {
   Search,
   SearchX,
   Upload,
-  User,
   X,
 } from 'lucide-vue-next'
 import AdaptiveModal from '@/components/m3/AdaptiveModal.vue'
@@ -38,7 +38,22 @@ const plugins = ref<PluginItem[]>([])
 const categories = ref<string[]>([])
 const registryUrl = ref('')
 const marketUrl = ref('')
+const resolvedMarketUrl = computed(
+  () => marketUrl.value || `${window.location.origin}/market/index.json`
+)
+const resolvedRegistryUrl = computed(
+  () => registryUrl.value || `${window.location.origin}/npm`
+)
 const selectedCategory = ref('全部')
+
+async function copyGuideUrl(url: string, label: string) {
+  const ok = await copyToClipboard(url)
+  if (ok) {
+    toast.success(`${label} 已复制`)
+  } else {
+    toast.error('复制失败')
+  }
+}
 const searchKeyword = ref('')
 
 // 详情抽屉
@@ -53,6 +68,7 @@ const mySubmissions = ref<PluginItem[]>([])
 
 // 投稿弹窗
 const submitModalVisible = ref(false)
+const clientGuideVisible = ref(false)
 const submitting = ref(false)
 const submitForm = reactive<{
   submit_source: 'tgz' | 'git'
@@ -291,10 +307,6 @@ onBeforeUnmount(() => {
           <span>我的投稿</span>
           <span v-if="mySubmissions.length > 0" class="count-pill">{{ mySubmissions.length }}</span>
         </MdButton>
-        <MdButton v-else variant="tonal" @click="openEmployeeLogin">
-          <User :size="15" />
-          <span>登录投稿</span>
-        </MdButton>
         <MdButton variant="text" :disabled="loading" @click="fetchPlugins">
           <RefreshCw :size="15" :class="{ 'is-spinning': loading }" />
           <span>刷新</span>
@@ -316,15 +328,11 @@ onBeforeUnmount(() => {
             <code>cordis.patch.yml</code> 即可在客户端直接浏览与一键安装。
           </p>
         </div>
-        <div v-if="marketUrl" class="endpoint-badges">
-          <div class="endpoint-item">
-            <span class="ep-label">Market Index</span>
-            <code class="mono ep-val">{{ marketUrl }}</code>
-          </div>
-          <div class="endpoint-item">
-            <span class="ep-label">Registry</span>
-            <code class="mono ep-val">{{ registryUrl }}</code>
-          </div>
+        <div class="hero-actions-col">
+          <MdButton variant="tonal" @click="clientGuideVisible = true">
+            <BookOpen :size="15" />
+            <span>客户端接入说明</span>
+          </MdButton>
         </div>
       </div>
     </MdCard>
@@ -348,9 +356,9 @@ onBeforeUnmount(() => {
       <span>正在加载插件市场...</span>
     </div>
 
-    <MdCard v-else-if="!filteredPlugins.length" variant="filled">
-      <div class="empty-box">
-        <SearchX :size="36" />
+    <MdCard v-else-if="!filteredPlugins.length" variant="filled" class="empty-market-card">
+      <div class="empty-box empty-box--compact">
+        <SearchX :size="32" />
         <h3>暂无匹配的已发布插件</h3>
         <p>您可以点击右上角「发布 / 投稿插件」成为首位企业插件贡献者</p>
       </div>
@@ -598,6 +606,42 @@ onBeforeUnmount(() => {
           <MdButton variant="filled" :disabled="submitting" @click="handleSubmitPlugin">
             {{ submitting ? '正在校验与提交...' : '提交审核' }}
           </MdButton>
+        </div>
+      </template>
+    </AdaptiveModal>
+
+    <!-- 客户端接入说明弹窗 -->
+    <AdaptiveModal
+      v-model="clientGuideVisible"
+      title="DeepSeek Harness 客户端插件市场接入说明"
+      max-width="580px"
+    >
+      <div class="client-guide-body">
+        <p class="guide-tip">
+          推荐直接在「快速上手」下载并覆盖四合一 <code>cordis.patch.yml</code>；如需手工配置内网插件市场端点，请使用以下地址：
+        </p>
+        <div class="guide-kv">
+          <span class="guide-label">Market Index URL</span>
+          <div class="guide-val-row">
+            <code class="mono">{{ resolvedMarketUrl }}</code>
+            <MdButton variant="text" @click="copyGuideUrl(resolvedMarketUrl, 'Market URL')">
+              <Copy :size="14" />
+            </MdButton>
+          </div>
+        </div>
+        <div class="guide-kv">
+          <span class="guide-label">Verdaccio Registry</span>
+          <div class="guide-val-row">
+            <code class="mono">{{ resolvedRegistryUrl }}</code>
+            <MdButton variant="text" @click="copyGuideUrl(resolvedRegistryUrl, 'Registry URL')">
+              <Copy :size="14" />
+            </MdButton>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="modal-footer-actions">
+          <MdButton variant="filled" @click="clientGuideVisible = false">我知道了</MdButton>
         </div>
       </template>
     </AdaptiveModal>
@@ -1052,9 +1096,60 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 36px 16px;
+  padding: 28px 16px;
   text-align: center;
   color: var(--md-sys-color-on-surface-variant);
+}
+
+.empty-box--compact {
+  padding: 20px 16px;
+}
+
+.empty-market-card {
+  background-color: var(--md-sys-color-surface-container-low);
+}
+
+.hero-actions-col {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.client-guide-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.guide-tip {
+  margin: 0;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+  line-height: 1.5;
+}
+
+.guide-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.guide-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.guide-val-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--md-sys-shape-corner-small);
+  background-color: var(--md-sys-color-surface-container-low);
+  font-size: 12px;
+  word-break: break-all;
 }
 
 .empty-box h3 {
