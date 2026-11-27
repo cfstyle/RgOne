@@ -14,6 +14,7 @@ class Employee(Base):
     department = Column(String(128), nullable=False, default="科技部", comment="所属部门")
     phone_last4 = Column(String(4), nullable=True, comment="手机号后4位（可选辅助）")
     is_active = Column(Boolean, default=True, nullable=False, comment="是否有效白名单")
+    hub_sync_status = Column(String(32), default="synced", nullable=False, comment="Capability Hub 状态同步: synced / hub_revoke_pending / hub_restore_pending")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

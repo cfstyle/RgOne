@@ -57,6 +57,8 @@ services:
         target: /app/data
         bind:
           create_host_path: false
+    networks:
+      - rgone-net
 
   nginx:
     image: "${RGONE_NGINX_IMAGE:-nginx:1.28-alpine}"
@@ -85,6 +87,13 @@ services:
         read_only: true
         bind:
           create_host_path: false
+    networks:
+      - rgone-net
 
 volumes:
   app-release:
+
+networks:
+  rgone-net:
+    name: rgone-net
+    driver: bridge

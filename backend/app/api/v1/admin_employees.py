@@ -12,6 +12,7 @@ from backend.app.api.deps import get_current_admin
 from backend.app.models.employee import Employee
 from backend.app.models.admin_user import AdminUser
 from backend.app.models.token import UserToken
+from backend.app.services.hub_client import CapabilityHubClient
 from backend.app.services.new_api_client import new_api_client
 
 router = APIRouter(prefix="/admin/employees", tags=["管理员员工白名单管理"])
@@ -60,6 +61,7 @@ def list_employees(
             "department": r.department,
             "phone_last4": r.phone_last4,
             "is_active": r.is_active,
+            "hub_sync_status": r.hub_sync_status,
             "has_token": r.token is not None,
             "token_id": r.token.id if r.token else None,
             "token_status": r.token.status if r.token else None,
@@ -127,6 +129,15 @@ async def update_employee(
                     # 保留本地停用状态与网关 Token ID，标记待重试状态
                     emp.token.status = "gateway_disable_pending"
                     status_warning = f"；但网关禁用失败 ({str(e)})，已标记为待重试"
+            # 联动 Capability Hub 吊销 Web JWT 与 ide-client MCP Token
+            hub_ok, hub_msg = await CapabilityHubClient.sync_employee_status(
+                emp.emp_no, is_active=False, reason="employee_disabled"
+            )
+            if hub_ok:
+                emp.hub_sync_status = "synced"
+            else:
+                emp.hub_sync_status = "hub_revoke_pending"
+                status_warning += f"；但能力中心吊销失败 ({hub_msg})，已标记待重试"
         elif target_active is True and emp.is_active is False:
             # 显式复职员工：联动恢复网关 Token
             if emp.token and emp.token.new_api_token_id and emp.token.status in ("disabled", "gateway_disable_pending"):
@@ -135,6 +146,15 @@ async def update_employee(
                     emp.token.status = "active"
                 except Exception as e:
                     status_warning = f"；但网关恢复启用失败 ({str(e)})"
+            # 联动 Capability Hub 恢复员工身份状态
+            hub_ok, hub_msg = await CapabilityHubClient.sync_employee_status(
+                emp.emp_no, is_active=True, reason="employee_restored"
+            )
+            if hub_ok:
+                emp.hub_sync_status = "synced"
+            else:
+                emp.hub_sync_status = "hub_restore_pending"
+                status_warning += f"；但能力中心恢复失败 ({hub_msg})，已标记待重试"
 
     for k, v in updates.items():
         setattr(emp, k, v)
@@ -142,6 +162,29 @@ async def update_employee(
     db.commit()
     msg = "员工信息已修改" + status_warning
     return {"success": True, "message": msg}
+
+
+@router.post("/{emp_id}/retry-hub-sync", summary="重试同步员工状态至 Capability Hub")
+async def retry_hub_sync(
+    emp_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    emp = db.query(Employee).filter(Employee.id == emp_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="员工记录未找到")
+
+    hub_ok, hub_msg = await CapabilityHubClient.sync_employee_status(
+        emp.emp_no,
+        is_active=bool(emp.is_active),
+        reason="retry_sync",
+    )
+    if not hub_ok:
+        raise HTTPException(status_code=502, detail=f"能力中心同步失败: {hub_msg}")
+
+    emp.hub_sync_status = "synced"
+    db.commit()
+    return {"success": True, "message": "能力中心状态同步成功"}
 
 
 @router.post("/{emp_id}/retry-disable-token", summary="重试吊销/禁用停用员工的网关 Token")
@@ -186,6 +229,16 @@ async def delete_employee(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"网关关联 Token 吊销失败，已中止删除以防止残留孤儿 Token: {str(e)}"
             )
+
+    # 若已对接能力中心，删除前同步吊销其 Hub 凭证
+    hub_ok, hub_msg = await CapabilityHubClient.sync_employee_status(
+        emp.emp_no, is_active=False, reason="employee_deleted"
+    )
+    if not hub_ok:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"能力中心凭证吊销失败，已中止删除以防止残留权限: {hub_msg}"
+        )
 
     db.delete(emp)
     db.commit()

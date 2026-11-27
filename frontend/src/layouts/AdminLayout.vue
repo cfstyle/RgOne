@@ -13,6 +13,7 @@ import {
   ShieldAlert,
   Sun,
   Moon,
+  Blocks,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
@@ -32,6 +33,7 @@ const menuItems = [
   { label: 'API Key 管理', path: '/admin/tokens', icon: KeyRound },
   { label: '资料与安装包', path: '/admin/files', icon: Download },
   { label: '案例文章管理', path: '/admin/articles', icon: BookOpen },
+  { label: 'MCP 能力治理', path: '/admin/mcp-hub', icon: Blocks },
   { label: '系统与网关配置', path: '/admin/settings', icon: Settings },
 ]
 

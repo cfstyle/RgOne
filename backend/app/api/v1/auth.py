@@ -1,11 +1,14 @@
 from __future__ import annotations
 import logging
 from datetime import timedelta
-from fastapi import APIRouter, Depends, Request, HTTPException, status
+from hmac import compare_digest
+from typing import Optional
+from fastapi import APIRouter, Depends, Header, Request, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
-from backend.app.core.security import verify_password, create_access_token, encrypt_secret
+from backend.app.core.security import verify_password, create_access_token, decode_access_token, encrypt_secret
 from backend.app.models.admin_user import AdminUser
 from backend.app.models.employee import Employee
 from backend.app.models.token import UserToken
@@ -170,6 +173,7 @@ async def unified_login(
     jwt_token = create_access_token({
         "sub": employee.emp_no,
         "name": employee.name,
+        "department": employee.department,
         "role": "employee",
     }, expires_delta=timedelta(days=settings.JWT_EXPIRE_DAYS))
 
@@ -234,3 +238,54 @@ def admin_login(req: AdminLoginRequest, db: Session = Depends(get_db)):
         user_type="admin",
         username=admin.username,
     )
+
+
+class InternalIntrospectRequest(BaseModel):
+    token: str
+
+
+@router.post("/internal/introspect", summary="内部服务调用：核验 JWT 及员工/管理员当前实时有效状态")
+def internal_introspect(
+    req: InternalIntrospectRequest,
+    x_internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    expected = (settings.CAPABILITY_HUB_INTERNAL_SECRET or "").strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="未配置 CAPABILITY_HUB_INTERNAL_SECRET")
+    if not x_internal_secret or not compare_digest(x_internal_secret.strip(), expected):
+        raise HTTPException(status_code=403, detail="内部鉴权密钥无效")
+
+    payload = decode_access_token(req.token)
+    if not payload:
+        return {"active": False, "reason": "invalid_or_expired"}
+
+    role = payload.get("role")
+    sub = payload.get("sub")
+    if not sub:
+        return {"active": False, "reason": "missing_sub"}
+
+    if role == "employee":
+        emp = db.query(Employee).filter(Employee.emp_no == sub, Employee.is_active.is_(True)).first()
+        if not emp:
+            return {"active": False, "reason": "employee_inactive"}
+        return {
+            "active": True,
+            "role": "employee",
+            "sub": emp.emp_no,
+            "name": emp.name,
+            "department": emp.department,
+        }
+
+    if role == "admin":
+        adm = db.query(AdminUser).filter(AdminUser.username == sub, AdminUser.is_active.is_(True)).first()
+        if not adm:
+            return {"active": False, "reason": "admin_inactive"}
+        return {
+            "active": True,
+            "role": "admin",
+            "sub": adm.username,
+            "name": adm.username,
+        }
+
+    return {"active": False, "reason": "unsupported_role"}

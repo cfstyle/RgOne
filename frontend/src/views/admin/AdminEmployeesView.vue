@@ -20,6 +20,7 @@ interface EmployeeItem {
   department: string
   phone_last4?: string | null
   is_active: boolean
+  hub_sync_status?: string | null
   has_token?: boolean
   token_status?: string | null
   created_at?: string
@@ -153,6 +154,17 @@ async function handleRetryDisableToken(emp: EmployeeItem) {
   }
 }
 
+async function handleRetryHubSync(emp: EmployeeItem) {
+  try {
+    const res = await api.retryHubSync(emp.id) as { message?: string }
+    alert(res.message || '能力中心状态同步成功')
+    loadList()
+  } catch (e: unknown) {
+    const err = e as { message?: string }
+    alert(err.message || '能力中心状态同步失败')
+  }
+}
+
 function handleFileSelect(e: Event) {
   const target = e.target as HTMLInputElement
   const file = target.files?.[0]
@@ -261,6 +273,12 @@ onMounted(() => {
               <span v-if="emp.token_status === 'gateway_disable_pending'" class="token-pill warning">
                 网关吊销待重试
               </span>
+              <span
+                v-else-if="emp.hub_sync_status === 'hub_revoke_pending' || emp.hub_sync_status === 'hub_restore_pending'"
+                class="token-pill warning"
+              >
+                {{ emp.hub_sync_status === 'hub_revoke_pending' ? '能力中心吊销待重试' : '能力中心恢复待重试' }}
+              </span>
               <span v-else class="token-pill" :class="{ claimed: emp.has_token }">
                 {{ emp.has_token ? '已申领' : '未申领' }}
               </span>
@@ -273,6 +291,14 @@ onMounted(() => {
                   class="row-btn warning"
                   title="重试网关吊销"
                   @click="handleRetryDisableToken(emp)"
+                >
+                  <RotateCcw :size="15" />
+                </button>
+                <button
+                  v-if="emp.hub_sync_status === 'hub_revoke_pending' || emp.hub_sync_status === 'hub_restore_pending'"
+                  class="row-btn warning"
+                  title="重试同步能力中心状态"
+                  @click="handleRetryHubSync(emp)"
                 >
                   <RotateCcw :size="15" />
                 </button>

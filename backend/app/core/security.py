@@ -43,15 +43,16 @@ def create_access_token(
     payload: Dict[str, Any],
     expires_delta: Optional[timedelta] = None
 ) -> str:
-    """生成统一 JWT Token"""
+    """生成统一 JWT Token（含 iss 标识用于跨系统严格验签路由）"""
     to_encode = payload.copy()
     now = datetime.now(timezone.utc)
     if expires_delta:
         expire = now + expires_delta
     else:
         expire = now + timedelta(days=settings.JWT_EXPIRE_DAYS)
-    
-    to_encode.update({"iat": now, "exp": expire})
+
+    to_encode.setdefault("iss", settings.JWT_ISSUER)
+    to_encode.update({"iat": int(now.timestamp()), "exp": int(expire.timestamp())})
     return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 

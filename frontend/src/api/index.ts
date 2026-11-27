@@ -216,6 +216,14 @@ export const api = {
       },
       true
     ),
+  retryHubSync: (id: number) =>
+    request(
+      `/admin/employees/${id}/retry-hub-sync`,
+      {
+        method: 'POST',
+      },
+      true
+    ),
   getEmployeeTemplateUrl: () => `${API_BASE}/admin/employees/template`,
   importEmployees: (formData: FormData) =>
     request(

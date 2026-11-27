@@ -32,6 +32,11 @@ const router = createRouter({
           component: () => import('@/views/portal/HarnessGuideView.vue'),
         },
         {
+          path: 'capabilities',
+          name: 'capabilities',
+          component: () => import('@/views/portal/CapabilitiesView.vue'),
+        },
+        {
           path: 'workspace',
           name: 'workspace',
           component: () => import('@/views/portal/WorkspaceView.vue'),
@@ -81,6 +86,11 @@ const router = createRouter({
           path: 'articles',
           name: 'admin-articles',
           component: () => import('@/views/admin/AdminArticlesView.vue'),
+        },
+        {
+          path: 'mcp-hub',
+          name: 'admin-mcp-hub',
+          component: () => import('@/views/admin/AdminMcpHubView.vue'),
         },
         {
           path: 'settings',

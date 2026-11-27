@@ -42,6 +42,13 @@ def seed_demo_employees(db: Session):
 def init_database():
     """初始化数据库表与基础种子数据（生产安全：仅建表、默认管理员与基础配置，不污染员工白名单）"""
     Base.metadata.create_all(bind=engine)
+    # 平滑增量列迁移：兼容旧库补充 employees.hub_sync_status
+    with engine.begin() as conn:
+        cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(employees)").fetchall()}
+        if cols and "hub_sync_status" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE employees ADD COLUMN hub_sync_status VARCHAR(32) NOT NULL DEFAULT 'synced'"
+            )
     db: Session = SessionLocal()
     try:
         # 1. 初始化默认管理员

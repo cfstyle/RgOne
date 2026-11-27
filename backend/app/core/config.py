@@ -21,9 +21,14 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     APP_SECRET_KEY: str = "bW9ja19zZWNyZXRfa2V5X2Zvcl9kZXZlbG9wbWVudF8zMndpdGhfMDA="
     JWT_SECRET: str = "super_secret_jwt_key_for_rgone_portal_2026"
+    JWT_ISSUER: str = "rgone"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_DAYS: int = 7
     ADMIN_JWT_EXPIRE_HOURS: int = 24
+
+    # AI Capability Hub 联动配置（同源整合 & 停用吊销同步）
+    CAPABILITY_HUB_BASE_URL: str = ""
+    CAPABILITY_HUB_INTERNAL_SECRET: str = ""
 
     # 数据库连接
     DATABASE_URL: str = "sqlite:///./data/app.db"

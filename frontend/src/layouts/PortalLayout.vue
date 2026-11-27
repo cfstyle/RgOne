@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Sun,
@@ -11,6 +11,7 @@ import {
   BookOpen,
   LayoutDashboard,
   Compass,
+  Blocks,
 } from 'lucide-vue-next'
 import { useThemeStore } from '@/stores/theme'
 import { useAuthStore } from '@/stores/auth'
@@ -27,6 +28,7 @@ const loginDefaultMode = ref<'employee' | 'admin'>('employee')
 
 const navItems = [
   { label: '快速上手', path: '/', icon: Compass },
+  { label: '能力中心 (MCP)', path: '/capabilities', icon: Blocks },
   { label: '我的工作台', path: '/workspace', icon: LayoutDashboard },
   { label: '下载中心', path: '/downloads', icon: Download },
   { label: '案例广场', path: '/articles', icon: BookOpen },
@@ -40,6 +42,19 @@ function openLogin(mode: 'employee' | 'admin' = 'employee') {
   loginDefaultMode.value = mode
   showLoginModal.value = true
 }
+
+function handleGlobalOpenLogin(event: Event) {
+  const custom = event as CustomEvent<{ mode?: 'employee' | 'admin' }>
+  openLogin(custom.detail?.mode === 'admin' ? 'admin' : 'employee')
+}
+
+onMounted(() => {
+  window.addEventListener('rgone:open-login', handleGlobalOpenLogin)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('rgone:open-login', handleGlobalOpenLogin)
+})
 </script>
 
 <template>
