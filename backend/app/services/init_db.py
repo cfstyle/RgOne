@@ -154,6 +154,16 @@ LIMIT 100;
                         pass
 
         db.commit()
+
+        # 5. 开发模拟模式且员工表为空时自动注入演示白名单（生产模式绝不注入）
+        if (
+            settings.app_mode == "development"
+            and settings.MOCK_XIAOMISHU_OTP is True
+            and db.query(Employee).count() == 0
+        ):
+            seed_demo_employees(db)
+            logger.info("开发模拟模式检测到员工表为空，已自动注入演示员工白名单")
+
         logger.info("数据库初始化与系统配置注入完毕（生产员工白名单保持纯净）")
     except Exception as e:
         db.rollback()

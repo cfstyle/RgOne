@@ -141,6 +141,24 @@ class XiaomishuService:
                 remain = max(1, remain_sec)
                 return False, f"验证码获取过于频繁，请等待 {remain} 秒后再试"
 
+        # 双锁校验：仅当非生产环境且显式开启 MOCK_XIAOMISHU_OTP 时走模拟发码
+        if settings.app_mode != "production" and settings.MOCK_XIAOMISHU_OTP is True:
+            mock_code = (settings.MOCK_XIAOMISHU_CODE or "123456").strip() or "123456"
+            code_hash = cls._hash_code(emp_no, mock_code)
+            expire_at = now_utc + timedelta(minutes=5)
+            new_record = VerificationCode(
+                emp_no=emp_no,
+                code_hash=code_hash,
+                expire_at=expire_at,
+                sent_at=now_utc,
+                is_used=False,
+            )
+            db.add(new_record)
+            db.commit()
+
+            logger.warning(f"【开发模拟模式】已为工号 {emp_no} 生成模拟验证码，未调用真实小秘书推送")
+            return True, f"【开发模拟模式】验证码已生成，测试码为 {mock_code}（仅限非生产环境）"
+
         api_url, default_touser, source = cls._get_config(db)
         if not api_url:
             logger.warning(f"小秘书推送接口未配置，无法向工号 {emp_no} 发送验证码")

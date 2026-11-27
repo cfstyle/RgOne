@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     XIAOMISHU_SEND_USER: Optional[str] = ""
     XIAOMISHU_SOURCE: str = "金融市场部RPA"
     XIAOMISHU_TEST_MODE: bool = False  # 生产严格投递给员工本人；仅在测试模式显式启用时才转发至固定账号
+    MOCK_XIAOMISHU_OTP: bool = False  # 仅限非生产环境本地开发联调模拟验证码，生产环境强制忽略
+    MOCK_XIAOMISHU_CODE: str = "123456"
 
     # 频率控制（连续输错锁定）
     AUTH_MAX_FAILURES: int = 5

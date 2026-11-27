@@ -387,5 +387,42 @@ def test_production_clean_init_and_no_overwrite_employee():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_mock_xiaomishu_otp_dev_only_and_prod_lock(client: TestClient, db_session, monkeypatch):
+    """验证开发模式 MOCK_XIAOMISHU_OTP=True 可使用 123456 完整登录，且生产模式强制忽略该开关"""
+    from backend.app.models.verification_code import VerificationCode
+
+    db_session.query(VerificationCode).filter(VerificationCode.emp_no == "06700956").delete()
+    db_session.commit()
+
+    # 1. 开发模式开启 MOCK_XIAOMISHU_OTP=True（即使未配置 XIAOMISHU_API）
+    monkeypatch.setattr(settings, "APP_ENV", "development")
+    monkeypatch.setattr(settings, "MOCK_XIAOMISHU_OTP", True)
+    monkeypatch.setattr(settings, "MOCK_XIAOMISHU_CODE", "123456")
+    monkeypatch.setattr(settings, "XIAOMISHU_API", "")
+
+    resp_send = client.post("/api/v1/auth/send-code", json={"account": "06700956"})
+    assert resp_send.status_code == 200, resp_send.text
+    assert "【开发模拟模式】验证码已生成，测试码为 123456（仅限非生产环境）" in resp_send.json().get("message", "")
+
+    resp_login = client.post("/api/v1/auth/login", json={"account": "06700956", "code": "123456"})
+    assert resp_login.status_code == 200, resp_login.text
+    login_data = resp_login.json()
+    assert login_data["emp_no"] == "06700956"
+    assert login_data["access_token"]
+
+    # 2. 生产模式即使误配 MOCK_XIAOMISHU_OTP=True，也绝不走模拟分支
+    db_session.query(VerificationCode).filter(VerificationCode.emp_no == "06700956").delete()
+    db_session.commit()
+
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "MOCK_XIAOMISHU_OTP", True)
+    monkeypatch.setattr(settings, "XIAOMISHU_API", "")
+
+    resp_prod_send = client.post("/api/v1/auth/send-code", json={"account": "06700956"})
+    assert resp_prod_send.status_code != 200
+    assert "开发模拟模式" not in resp_prod_send.text
+    assert "小秘书" in resp_prod_send.json().get("detail", "")
+
+
 if __name__ == "__main__":
     pytest.main(["-v", __file__])
