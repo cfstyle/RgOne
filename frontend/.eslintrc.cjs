@@ -37,5 +37,27 @@ module.exports = {
         varsIgnorePattern: '^_'
       }
     ]
-  }
+  },
+  overrides: [
+    {
+      // 仅限制业务视图层（src/views/**），不限制底层 M3 原子组件目录（src/components/m3/**）
+      files: ['src/views/**/*.vue'],
+      rules: {
+        'vue/no-restricted-html-elements': [
+          'error',
+          {
+            element: 'select',
+            message: '请使用 src/components/m3/MdSelect.vue 替代原生 <select>'
+          }
+        ],
+        'vue/no-restricted-syntax': [
+          'error',
+          {
+            selector: 'VElement[name="input"] > VStartTag > VAttribute[key.name="type"][value.value="checkbox"]',
+            message: '禁止在业务视图中裸写原生 <input type="checkbox">，请改用 src/components/m3/MdSwitch.vue'
+          }
+        ]
+      }
+    }
+  ]
 }

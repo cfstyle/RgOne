@@ -4,7 +4,15 @@ import { Edit3, PlayCircle, RefreshCw, Search } from 'lucide-vue-next'
 import AdaptiveModal from '@/components/m3/AdaptiveModal.vue'
 import MdButton from '@/components/m3/MdButton.vue'
 import MdCard from '@/components/m3/MdCard.vue'
+import MdSelect, { type SelectOption } from '@/components/m3/MdSelect.vue'
 import MdSwitch from '@/components/m3/MdSwitch.vue'
+
+const riskLevelOptions: SelectOption[] = [
+  { label: 'L0 (公开只读)', value: 'L0' },
+  { label: 'L1 (受控只读)', value: 'L1' },
+  { label: 'L2 (业务写入)', value: 'L2' },
+  { label: 'L3 (高危/敏感操作)', value: 'L3' },
+]
 import { useToast } from '@/composables/useToast'
 import {
   getMcpErrorMessage,
@@ -51,6 +59,11 @@ let abortController: AbortController | null = null
 const serviceMap = computed(() => {
   return new Map(services.value.map((svc) => [svc.id, svc.name]))
 })
+
+const serviceFilterOptions = computed<SelectOption[]>(() => [
+  { label: '全部服务', value: '' },
+  ...services.value.map((svc) => ({ label: svc.name, value: svc.id })),
+])
 
 const filteredTools = computed(() => {
   return tools.value.filter((tool) => {
@@ -149,10 +162,7 @@ onBeforeUnmount(() => {
             class="search-input"
           />
         </div>
-        <select v-model="selectedServiceId" class="filter-select">
-          <option value="">全部服务</option>
-          <option v-for="svc in services" :key="svc.id" :value="svc.id">{{ svc.name }}</option>
-        </select>
+        <MdSelect v-model="selectedServiceId" :options="serviceFilterOptions" size="sm" />
       </div>
       <MdButton variant="tonal" :disabled="loading" @click="fetchData">
         <RefreshCw :size="15" :class="{ 'is-spinning': loading }" />
@@ -242,12 +252,7 @@ onBeforeUnmount(() => {
       <div class="policy-form">
         <div class="form-item">
           <label class="form-label">风险分级</label>
-          <select v-model="policyForm.risk_level" class="form-input">
-            <option value="L0">L0 (公开只读)</option>
-            <option value="L1">L1 (受控只读)</option>
-            <option value="L2">L2 (业务写入)</option>
-            <option value="L3">L3 (高危/敏感操作)</option>
-          </select>
+          <MdSelect v-model="policyForm.risk_level" :options="riskLevelOptions" style="width: 100%" />
         </div>
         <div class="switch-row">
           <span>需要人工确认 (requires_confirmation)</span>
@@ -321,24 +326,16 @@ onBeforeUnmount(() => {
   color: var(--md-sys-color-on-surface-variant);
 }
 
-.search-input,
-.filter-select {
+.search-input {
+  width: 240px;
   height: 36px;
+  padding: 0 12px 0 34px;
   border-radius: var(--md-sys-shape-corner-full);
   border: 1px solid var(--md-sys-color-outline-variant);
   background-color: var(--md-sys-color-surface-container-low);
   color: var(--md-sys-color-on-surface);
   font-size: 13px;
   outline: none;
-}
-
-.search-input {
-  width: 240px;
-  padding: 0 12px 0 34px;
-}
-
-.filter-select {
-  padding: 0 12px;
 }
 
 .table-wrap {

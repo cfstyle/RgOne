@@ -7,8 +7,15 @@ import {
   Pin,
   Image as ImageIcon,
 } from 'lucide-vue-next'
-import { AdaptiveModal } from '@/components/m3'
+import { AdaptiveModal, MdSelect, MdSwitch, type SelectOption } from '@/components/m3'
 import { api } from '@/api'
+
+const articleCategoryOptions: SelectOption[] = [
+  { label: '入门指南', value: '入门指南' },
+  { label: '提效秘籍', value: '提效秘籍' },
+  { label: '代码实践', value: '代码实践' },
+  { label: '风控合规', value: '风控合规' },
+]
 
 export interface ArticleItem {
   id: number
@@ -237,12 +244,7 @@ onMounted(() => {
           </div>
           <div class="f-group" style="flex: 1">
             <label class="f-label">所属分类</label>
-            <select v-model="editorForm.category" class="m3-input">
-              <option value="入门指南">入门指南</option>
-              <option value="提效秘籍">提效秘籍</option>
-              <option value="代码实践">代码实践</option>
-              <option value="风控合规">风控合规</option>
-            </select>
+            <MdSelect v-model="editorForm.category" :options="articleCategoryOptions" style="width: 100%" />
           </div>
         </div>
 
@@ -253,11 +255,17 @@ onMounted(() => {
           </div>
           <div class="f-group checkbox-row" style="flex: 1">
             <label class="cb-label">
-              <input v-model="editorForm.is_pinned" type="checkbox" />
+              <MdSwitch
+                :model-value="Boolean(editorForm.is_pinned)"
+                @update:model-value="(val) => (editorForm.is_pinned = val)"
+              />
               <span>置顶推荐</span>
             </label>
             <label class="cb-label">
-              <input v-model="editorForm.is_published" type="checkbox" />
+              <MdSwitch
+                :model-value="Boolean(editorForm.is_published)"
+                @update:model-value="(val) => (editorForm.is_published = val)"
+              />
               <span>正式发布</span>
             </label>
           </div>

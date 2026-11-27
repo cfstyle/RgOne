@@ -1,13 +1,21 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { Eye, RefreshCw, Search } from 'lucide-vue-next'
 import AdaptiveModal from '@/components/m3/AdaptiveModal.vue'
 import MdButton from '@/components/m3/MdButton.vue'
 import MdCard from '@/components/m3/MdCard.vue'
 import MdPagination from '@/components/m3/MdPagination.vue'
+import MdSelect, { type SelectOption } from '@/components/m3/MdSelect.vue'
 import { useToast } from '@/composables/useToast'
 import { getAuditLogs, getMcpErrorMessage, getServices, isMcpEngineUnavailable } from '@/api/mcp'
 import type { AuditLog, McpService } from '@/types/mcp'
+
+const resultStatusOptions: SelectOption[] = [
+  { label: '全部状态', value: '' },
+  { label: 'success', value: 'success' },
+  { label: 'error', value: 'error' },
+  { label: 'denied', value: 'denied' },
+]
 
 const emit = defineEmits<{
   (e: 'engine-error', message: string): void
@@ -26,6 +34,11 @@ const filters = reactive({
   tool_name: '',
   result_status: '',
 })
+
+const serviceOptions = computed<SelectOption[]>(() => [
+  { label: '全部服务', value: '' },
+  ...services.value.map((svc) => ({ label: svc.name, value: svc.id })),
+])
 
 const detailModalVisible = ref(false)
 const activeLog = ref<AuditLog | null>(null)
@@ -101,10 +114,12 @@ onBeforeUnmount(() => {
   <div class="mcp-audit-tab">
     <div class="tab-toolbar">
       <div class="filter-row">
-        <select v-model="filters.service_id" class="filter-select" @change="handleSearch">
-          <option value="">全部服务</option>
-          <option v-for="svc in services" :key="svc.id" :value="svc.id">{{ svc.name }}</option>
-        </select>
+        <MdSelect
+          v-model="filters.service_id"
+          :options="serviceOptions"
+          size="sm"
+          @change="handleSearch"
+        />
 
         <div class="search-box">
           <Search :size="15" class="search-icon" />
@@ -117,12 +132,12 @@ onBeforeUnmount(() => {
           />
         </div>
 
-        <select v-model="filters.result_status" class="filter-select" @change="handleSearch">
-          <option value="">全部状态</option>
-          <option value="success">success</option>
-          <option value="error">error</option>
-          <option value="denied">denied</option>
-        </select>
+        <MdSelect
+          v-model="filters.result_status"
+          :options="resultStatusOptions"
+          size="sm"
+          @change="handleSearch"
+        />
 
         <MdButton variant="tonal" @click="handleSearch">查询</MdButton>
       </div>
@@ -257,24 +272,16 @@ onBeforeUnmount(() => {
   color: var(--md-sys-color-on-surface-variant);
 }
 
-.search-input,
-.filter-select {
+.search-input {
+  width: 220px;
   height: 36px;
+  padding: 0 12px 0 34px;
   border-radius: var(--md-sys-shape-corner-full);
   border: 1px solid var(--md-sys-color-outline-variant);
   background-color: var(--md-sys-color-surface-container-low);
   color: var(--md-sys-color-on-surface);
   font-size: 13px;
   outline: none;
-}
-
-.search-input {
-  width: 220px;
-  padding: 0 12px 0 34px;
-}
-
-.filter-select {
-  padding: 0 12px;
 }
 
 .table-wrap {

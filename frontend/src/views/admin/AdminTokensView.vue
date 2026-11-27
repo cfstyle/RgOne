@@ -5,7 +5,14 @@ import {
   RotateCcw,
   Power,
 } from 'lucide-vue-next'
+import { MdSelect, type SelectOption } from '@/components/m3'
 import { api } from '@/api'
+
+const tokenStatusOptions: SelectOption[] = [
+  { label: '全部状态', value: '' },
+  { label: '正常启用 (active)', value: 'active' },
+  { label: '已被停用 (disabled)', value: 'disabled' },
+]
 
 interface AdminTokenItem {
   id: number
@@ -108,11 +115,12 @@ onMounted(() => {
         />
       </div>
 
-      <select v-model="statusFilter" class="m3-select" @change="page = 1; loadTokens()">
-        <option value="">全部状态</option>
-        <option value="active">正常启用 (active)</option>
-        <option value="disabled">已被停用 (disabled)</option>
-      </select>
+      <MdSelect
+        v-model="statusFilter"
+        :options="tokenStatusOptions"
+        size="sm"
+        @change="page = 1; loadTokens()"
+      />
 
       <button class="filter-btn md-state-layer" @click="page = 1; loadTokens()">查询</button>
     </div>
@@ -238,16 +246,6 @@ onMounted(() => {
 
 .s-input:focus {
   border-color: var(--md-sys-color-primary);
-}
-
-.m3-select {
-  padding: 8px 14px;
-  border-radius: var(--md-sys-shape-corner-full);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  background-color: var(--md-sys-color-surface-container);
-  color: var(--md-sys-color-on-surface);
-  font-size: 13px;
-  outline: none;
 }
 
 .filter-btn {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import {
   KeyRound,
   Eye,
@@ -15,7 +15,7 @@ import {
   UserCheck,
 } from 'lucide-vue-next'
 import * as echarts from 'echarts'
-import { AdaptiveModal } from '@/components/m3'
+import { AdaptiveModal, MdSelect, type SelectOption } from '@/components/m3'
 import { api } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
@@ -94,6 +94,10 @@ const modelDist = ref<ModelDistItem[]>([])
 const logsPage = ref(1)
 const logsPageSize = ref(10)
 const selectedModelFilter = ref('')
+const modelFilterOptions = computed<SelectOption[]>(() => [
+  { label: '全部模型', value: '' },
+  ...modelDist.value.map((m) => ({ label: m.model_name, value: m.model_name })),
+])
 const logsData = ref<{ total: number; items: LogItem[] }>({ total: 0, items: [] })
 const loadingLogs = ref(false)
 
@@ -655,12 +659,12 @@ onBeforeUnmount(() => {
             <span class="table-sub">共 {{ logsData.total }} 条消费记录</span>
           </div>
           <div class="table-filters">
-            <select v-model="selectedModelFilter" class="m3-filter-select" @change="loadLogs">
-              <option value="">全部模型</option>
-              <option v-for="m in modelDist" :key="m.model_name" :value="m.model_name">
-                {{ m.model_name }}
-              </option>
-            </select>
+            <MdSelect
+              v-model="selectedModelFilter"
+              :options="modelFilterOptions"
+              size="sm"
+              @change="loadLogs"
+            />
           </div>
         </div>
 
@@ -1134,16 +1138,6 @@ onBeforeUnmount(() => {
 .table-sub {
   font-size: 12px;
   color: var(--md-sys-color-outline);
-}
-
-.m3-filter-select {
-  padding: 6px 12px;
-  border-radius: var(--md-sys-shape-corner-medium);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  background-color: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-surface);
-  font-size: 13px;
-  outline: none;
 }
 
 .table-container {

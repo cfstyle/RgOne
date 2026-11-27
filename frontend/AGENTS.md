@@ -12,7 +12,7 @@ Before writing or modifying any code in this repository, you **MUST** read and s
    - Strictly Vue 3 `<script setup lang="ts">` + Composition API.
    - Global icon system: `lucide-vue-next` only. No random third-party icon libraries or inline SVGs.
    - **Zero Hardcoded Colors**: Strictly use `var(--md-sys-color-*)` tokens from `src/styles/m3-tokens.css`.
-   - Atomic components: Reuse `MdButton`, `MdCard`, `MdSwitch`, and `AdaptiveModal` from `src/components/m3/`. No heavy UI frameworks (Element Plus, Ant Design Vue, etc.) unless running legacy migration.
+   - Atomic components: Reuse `MdButton`, `MdCard`, `MdChartCard`, `MdDrawer`, `MdInput`, `MdPagination`, `MdSelect`, `MdSnackbar`, `MdSwitch`, `MdTable`, `MdTooltip`, and `AdaptiveModal` from `src/components/m3/`. **Strictly forbidden** to use native `<select>` or `<input type="checkbox">` in `src/views/**` (use `MdSelect` / `MdSwitch` instead). No heavy UI frameworks (Element Plus, Ant Design Vue, etc.) unless running legacy migration.
    - Interactive feedback: Use `.md-state-layer` utility classes for hover/active feedback.
 
 2. **Zero-Defect Code Reliability**: [`.agent/rules/modern-web-reliability.md`](.agent/rules/modern-web-reliability.md)

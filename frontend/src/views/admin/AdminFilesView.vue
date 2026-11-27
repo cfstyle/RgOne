@@ -6,8 +6,15 @@ import {
   Trash2,
   Edit2,
 } from 'lucide-vue-next'
-import { AdaptiveModal, MdButton } from '@/components/m3'
+import { AdaptiveModal, MdButton, MdSelect, MdSwitch, type SelectOption } from '@/components/m3'
 import { api } from '@/api'
+
+const fileCategoryOptions: SelectOption[] = [
+  { label: '客户端安装包 (installer)', value: 'installer' },
+  { label: '使用手册 (manual)', value: 'manual' },
+  { label: '插件工具 (plugin)', value: 'plugin' },
+  { label: '其他资料 (other)', value: 'other' },
+]
 
 interface SharedFileItem {
   id: number
@@ -239,12 +246,7 @@ onMounted(() => {
 
         <div class="f-group">
           <label class="f-label">资料类别</label>
-          <select v-model="uploadForm.category" class="m3-modal-input">
-            <option value="installer">客户端安装包 (installer)</option>
-            <option value="manual">使用手册 (manual)</option>
-            <option value="plugin">插件工具 (plugin)</option>
-            <option value="other">其他资料 (other)</option>
-          </select>
+          <MdSelect v-model="uploadForm.category" :options="fileCategoryOptions" style="width: 100%" />
         </div>
 
         <div class="f-group">
@@ -279,7 +281,7 @@ onMounted(() => {
 
         <div class="f-group checkbox-group" v-if="uploadForm.category === 'installer'">
           <label class="checkbox-label">
-            <input v-model="uploadForm.is_recommended" type="checkbox" />
+            <MdSwitch v-model="uploadForm.is_recommended" />
             <span>设为首页第 1 步主推的安装包</span>
           </label>
         </div>
@@ -318,7 +320,7 @@ onMounted(() => {
 
         <div class="f-group checkbox-group">
           <label class="checkbox-label">
-            <input v-model="editForm.is_recommended" type="checkbox" />
+            <MdSwitch v-model="editForm.is_recommended" />
             <span>设为主推安装包</span>
           </label>
         </div>

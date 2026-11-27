@@ -10,7 +10,7 @@ import {
   AlertCircle,
   RotateCcw,
 } from 'lucide-vue-next'
-import { AdaptiveModal, MdButton } from '@/components/m3'
+import { AdaptiveModal, MdButton, MdSwitch } from '@/components/m3'
 import { api } from '@/api'
 
 interface EmployeeItem {
@@ -374,7 +374,7 @@ onMounted(() => {
 
         <div class="f-group checkbox-group">
           <label class="checkbox-label">
-            <input v-model="editForm.is_active" type="checkbox" />
+            <MdSwitch v-model="editForm.is_active" />
             <span>是否激活白名单</span>
           </label>
         </div>

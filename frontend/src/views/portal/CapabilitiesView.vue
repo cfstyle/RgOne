@@ -7,6 +7,7 @@ import {
   BarChart3,
   BookOpen,
   Bot,
+  Check,
   CheckCircle,
   CheckCircle2,
   ChevronDown,
@@ -1403,13 +1404,16 @@ onBeforeUnmount(() => {
           <div class="tools-list">
             <div v-for="tool in currentDetail.tools" :key="getToolKey(tool)" class="tool-item-card">
               <div class="tool-item-main">
-                <input
+                <button
                   v-if="isToolSelectable(tool)"
-                  type="checkbox"
-                  :checked="selectedToolIdsForApply.has(getToolKey(tool))"
-                  class="tool-checkbox"
-                  @change="toggleToolSelection(tool)"
-                />
+                  type="button"
+                  role="checkbox"
+                  :aria-checked="selectedToolIdsForApply.has(getToolKey(tool))"
+                  :class="['tool-select-check', { 'is-checked': selectedToolIdsForApply.has(getToolKey(tool)) }]"
+                  @click="toggleToolSelection(tool)"
+                >
+                  <Check v-if="selectedToolIdsForApply.has(getToolKey(tool))" :size="13" />
+                </button>
                 <div class="tool-item-body">
                   <div class="tool-item-title-row">
                     <span class="tool-biz-title">{{ getToolBusinessTitle(tool) }}</span>
@@ -2693,11 +2697,30 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
-.tool-checkbox {
-  margin-top: 3px;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--md-sys-color-primary);
+.tool-select-check {
+  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  border: 1.5px solid var(--md-sys-color-outline);
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-primary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.tool-select-check:hover {
+  border-color: var(--md-sys-color-primary);
+}
+
+.tool-select-check.is-checked {
+  background: var(--md-sys-color-primary);
+  border-color: var(--md-sys-color-primary);
 }
 
 .tool-item-body {

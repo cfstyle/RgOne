@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { AlertTriangle, CheckCircle2, Copy, Play, RefreshCw, XCircle } from 'lucide-vue-next'
 import MdButton from '@/components/m3/MdButton.vue'
 import MdCard from '@/components/m3/MdCard.vue'
+import MdSelect, { type SelectOption } from '@/components/m3/MdSelect.vue'
 import MdSwitch from '@/components/m3/MdSwitch.vue'
 import { useToast } from '@/composables/useToast'
 import { copyToClipboard } from '@/utils/clipboard'
@@ -49,6 +50,28 @@ let abortController: AbortController | null = null
 const serviceTools = computed(() =>
   tools.value.filter((t) => !selectedServiceId.value || t.service_id === selectedServiceId.value)
 )
+
+const serviceOptions = computed<SelectOption[]>(() => [
+  { label: '请选择服务', value: '' },
+  ...services.value.map((svc) => ({ label: svc.name, value: svc.id })),
+])
+
+const toolOptions = computed<SelectOption[]>(() => [
+  { label: '请选择工具', value: '' },
+  ...serviceTools.value.map((t) => ({ label: `${t.name} (${t.risk_level})`, value: t.name })),
+])
+
+function buildEnumOptions(values?: unknown[]): SelectOption[] {
+  const base: SelectOption[] = [{ label: '请选择', value: '' }]
+  if (!values?.length) return base
+  return [
+    ...base,
+    ...values.map((opt) => ({
+      label: String(opt),
+      value: typeof opt === 'number' ? opt : String(opt),
+    })),
+  ]
+}
 
 const currentTool = computed<RegisteredTool | undefined>(() =>
   tools.value.find(
@@ -252,20 +275,12 @@ onBeforeUnmount(() => {
         <div class="form-stack">
           <div class="form-item">
             <label class="form-label">目标服务</label>
-            <select v-model="selectedServiceId" class="form-input">
-              <option value="">请选择服务</option>
-              <option v-for="svc in services" :key="svc.id" :value="svc.id">{{ svc.name }}</option>
-            </select>
+            <MdSelect v-model="selectedServiceId" :options="serviceOptions" style="width: 100%" />
           </div>
 
           <div class="form-item">
             <label class="form-label">目标工具</label>
-            <select v-model="selectedToolName" class="form-input">
-              <option value="">请选择工具</option>
-              <option v-for="t in serviceTools" :key="t.id" :value="t.name">
-                {{ t.name }} ({{ t.risk_level }})
-              </option>
-            </select>
+            <MdSelect v-model="selectedToolName" :options="toolOptions" style="width: 100%" />
           </div>
 
           <div class="mode-switch">
@@ -295,10 +310,13 @@ onBeforeUnmount(() => {
                 <span v-if="requiredFields.has(key)" class="required-mark">*</span>
                 <span class="prop-type">({{ prop.type || 'string' }})</span>
               </label>
-              <select v-if="prop.enum?.length" v-model="formArgs[key]" class="form-input">
-                <option value="">请选择</option>
-                <option v-for="opt in prop.enum" :key="String(opt)" :value="opt">{{ opt }}</option>
-              </select>
+              <MdSelect
+                v-if="prop.enum?.length"
+                :model-value="formArgs[key] === undefined ? '' : (formArgs[key] as string | number)"
+                :options="buildEnumOptions(prop.enum)"
+                style="width: 100%"
+                @update:model-value="(val) => (formArgs[key] = val)"
+              />
               <div v-else-if="prop.type === 'boolean'" class="bool-row">
                 <span>{{ prop.description || key }}</span>
                 <MdSwitch
@@ -333,7 +351,7 @@ onBeforeUnmount(() => {
           <div v-if="needsSafetyConfirm" class="safety-box">
             <AlertTriangle :size="16" />
             <label class="confirm-label">
-              <input v-model="confirmed" type="checkbox" />
+              <MdSwitch v-model="confirmed" />
               <span>已知悉该工具为受控/高风险等级（{{ currentTool?.risk_level }}），确认受控执行</span>
             </label>
           </div>

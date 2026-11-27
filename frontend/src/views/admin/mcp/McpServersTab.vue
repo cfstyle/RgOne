@@ -17,7 +17,13 @@ import AdaptiveModal from '@/components/m3/AdaptiveModal.vue'
 import MdButton from '@/components/m3/MdButton.vue'
 import MdCard from '@/components/m3/MdCard.vue'
 import MdDrawer from '@/components/m3/MdDrawer.vue'
+import MdSelect, { type SelectOption } from '@/components/m3/MdSelect.vue'
 import MdSwitch from '@/components/m3/MdSwitch.vue'
+
+const transportOptions: SelectOption[] = [
+  { label: 'Streamable HTTP (http)', value: 'http' },
+  { label: 'SSE (sse)', value: 'sse' },
+]
 import { useToast } from '@/composables/useToast'
 import {
   deleteService,
@@ -565,10 +571,11 @@ onBeforeUnmount(() => {
         <div class="form-row-2">
           <div class="form-item">
             <label class="form-label">传输协议</label>
-            <select v-model="registerForm.transport" class="form-input">
-              <option value="http">Streamable HTTP (http)</option>
-              <option value="sse">SSE (sse)</option>
-            </select>
+            <MdSelect
+              v-model="registerForm.transport"
+              :options="transportOptions"
+              style="width: 100%"
+            />
           </div>
           <div class="form-item">
             <label class="form-label">分类标签</label>
