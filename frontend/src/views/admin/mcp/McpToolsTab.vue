@@ -240,7 +240,7 @@ onBeforeUnmount(() => {
           </span>
         </div>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="text" @click="policyModalVisible = false">取消</MdButton>
           <MdButton variant="filled" :disabled="savingPolicy" @click="savePolicy">
@@ -256,7 +256,7 @@ onBeforeUnmount(() => {
       max-width="640px"
     >
       <pre class="schema-pre"><code>{{ JSON.stringify(selectedTool?.input_schema || {}, null, 2) }}</code></pre>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="filled" @click="schemaModalVisible = false">关闭</MdButton>
         </div>

@@ -600,7 +600,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="text" @click="submitModalVisible = false">取消</MdButton>
           <MdButton variant="filled" :disabled="submitting" @click="handleSubmitPlugin">
@@ -639,7 +639,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="filled" @click="clientGuideVisible = false">我知道了</MdButton>
         </div>

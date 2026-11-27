@@ -1273,7 +1273,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="text" @click="accessModalVisible = false">关闭</MdButton>
           <MdButton variant="filled" @click="handlePrimaryCopy">
@@ -1532,7 +1532,7 @@ onBeforeUnmount(() => {
           ></textarea>
         </div>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="text" @click="applyModalVisible = false">取消</MdButton>
           <MdButton
@@ -1736,7 +1736,7 @@ onBeforeUnmount(() => {
           />
         </div>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="text" @click="editBindingModalVisible = false">取消</MdButton>
           <MdButton
@@ -1781,7 +1781,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="filled" @click="guideModalVisible = false">我知道了</MdButton>
         </div>

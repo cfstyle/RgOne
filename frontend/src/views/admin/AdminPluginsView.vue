@@ -300,7 +300,7 @@ onBeforeUnmount(() => {
         </div>
         <pre class="code-pre"><code>{{ JSON.stringify(activeVersion.package_json || {}, null, 2) }}</code></pre>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="filled" @click="snapshotModalVisible = false">关闭</MdButton>
         </div>
@@ -338,7 +338,7 @@ onBeforeUnmount(() => {
           ></textarea>
         </div>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="text" @click="reviewModalVisible = false">取消</MdButton>
           <MdButton variant="filled" :disabled="submittingReview" @click="submitReview">
@@ -360,7 +360,7 @@ onBeforeUnmount(() => {
           <input v-model="editForm.category" type="text" class="form-input" />
         </div>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="text" @click="editModalVisible = false">取消</MdButton>
           <MdButton variant="filled" :disabled="savingEdit" @click="saveEdit">

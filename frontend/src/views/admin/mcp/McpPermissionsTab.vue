@@ -203,7 +203,7 @@ onBeforeUnmount(() => {
           ></textarea>
         </div>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="text" @click="reviewModalVisible = false">取消</MdButton>
           <MdButton variant="filled" :disabled="submittingReview" @click="submitReview">

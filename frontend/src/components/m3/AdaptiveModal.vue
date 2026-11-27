@@ -89,9 +89,10 @@ onUnmounted(() => {
             <slot />
           </div>
 
-          <!-- 底部操作栏 -->
-          <div v-if="$slots.actions" class="m3-modal__actions">
-            <slot name="actions" :close="close" />
+          <!-- 底部操作栏（同时兼容 #actions 与 #footer） -->
+          <div v-if="$slots.actions || $slots.footer" class="m3-modal__actions">
+            <slot v-if="$slots.actions" name="actions" :close="close" />
+            <slot v-else name="footer" :close="close" />
           </div>
         </div>
       </div>

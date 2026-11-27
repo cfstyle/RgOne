@@ -613,7 +613,7 @@ onBeforeUnmount(() => {
           ></textarea>
         </div>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="text" @click="registerModalVisible = false">取消</MdButton>
           <MdButton variant="filled" :disabled="registering" @click="handleSubmitRegister">
@@ -656,7 +656,7 @@ onBeforeUnmount(() => {
           </div>
         </MdCard>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="text" @click="publishModalVisible = false">取消</MdButton>
           <MdButton
@@ -664,7 +664,7 @@ onBeforeUnmount(() => {
             :disabled="!inspectResult || installingPlugin"
             @click="handleInstallPlugin"
           >
-            {{ installingPlugin ? '正在安装启动...' : '确认发布上线' }}
+            {{ installingPlugin ? '正在安装启动...' : '确认发布并启动' }}
           </MdButton>
         </div>
       </template>
@@ -761,7 +761,7 @@ onBeforeUnmount(() => {
     <AdaptiveModal v-model="guideModalVisible" title="MCP 插件开发与发布规范" max-width="760px">
       <div v-if="loadingGuide" class="empty-box">正在加载开发规范文档...</div>
       <pre v-else class="schema-pre"><code>{{ guideContent }}</code></pre>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="filled" @click="guideModalVisible = false">关闭</MdButton>
         </div>
@@ -800,7 +800,7 @@ onBeforeUnmount(() => {
           <textarea v-model="editForm.examples_text" rows="3" class="form-textarea"></textarea>
         </div>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="text" @click="editModalVisible = false">取消</MdButton>
           <MdButton variant="filled" :disabled="savingEdit" @click="handleSaveMetadata">
@@ -817,7 +817,7 @@ onBeforeUnmount(() => {
       max-width="640px"
     >
       <pre class="schema-pre"><code>{{ JSON.stringify(schemaTool?.input_schema || {}, null, 2) }}</code></pre>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="filled" @click="schemaModalVisible = false">关闭</MdButton>
         </div>

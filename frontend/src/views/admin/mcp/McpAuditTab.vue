@@ -9,6 +9,7 @@ import MdSelect, { type SelectOption } from '@/components/m3/MdSelect.vue'
 import { useToast } from '@/composables/useToast'
 import { getAuditLogs, getMcpErrorMessage, getServices, isMcpEngineUnavailable } from '@/api/mcp'
 import type { AuditLog, McpService } from '@/types/mcp'
+import { formatDebugResponse, highlightDebugJson } from './responseFormat'
 
 const statusOptions: SelectOption[] = [
   { label: '全部状态', value: '' },
@@ -94,8 +95,12 @@ function handlePageChange(payload: { page: number; pageSize: number }) {
 
 function formatArgs(args: Record<string, unknown> | undefined): string {
   if (!args) return '{}'
-  return JSON.stringify(args, null, 2)
+  return formatDebugResponse(args)
 }
+
+const highlightedParamsHtml = computed(() =>
+  highlightDebugJson(formatArgs(activeLog.value?.params_summary))
+)
 
 onMounted(() => {
   void fetchLogs()
@@ -218,10 +223,11 @@ onBeforeUnmount(() => {
         </div>
         <div class="detail-block">
           <strong>脱敏入参 (Params Summary)</strong>
-          <pre class="detail-pre"><code>{{ formatArgs(activeLog.params_summary) }}</code></pre>
+          <!-- eslint-disable-next-line vue/no-v-html -->
+          <pre class="detail-pre"><code v-html="highlightedParamsHtml"></code></pre>
         </div>
       </div>
-      <template #footer>
+      <template #actions>
         <div class="modal-footer-actions">
           <MdButton variant="filled" @click="detailModalVisible = false">关闭</MdButton>
         </div>
@@ -367,13 +373,35 @@ onBeforeUnmount(() => {
 
 .detail-pre {
   margin: 0;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: var(--md-sys-shape-corner-small);
   background-color: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
-  overflow-x: auto;
+  line-height: 1.6;
+  overflow: auto;
+  max-height: 360px;
   white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detail-pre :deep(.json-key) {
+  color: var(--md-sys-color-primary);
+  font-weight: 600;
+}
+
+.detail-pre :deep(.json-string) {
+  color: var(--sys-status-success-text);
+}
+
+.detail-pre :deep(.json-number),
+.detail-pre :deep(.json-boolean) {
+  color: var(--sys-status-warning-text);
+}
+
+.detail-pre :deep(.json-null) {
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .error-box {

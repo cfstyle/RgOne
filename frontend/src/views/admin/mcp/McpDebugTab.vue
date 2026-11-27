@@ -539,7 +539,9 @@ onBeforeUnmount(() => {
   color: var(--md-sys-color-on-surface);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
   overflow: auto;
   max-height: 520px;
 }
