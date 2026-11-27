@@ -14,6 +14,7 @@ from backend.app.services.init_db import init_database
 from backend.app.services.new_api_client import new_api_client
 from backend.app.services.log_sync import LogSyncService
 from backend.app.api.v1.api import api_router
+from backend.app.api.v1.market import public_market_router
 
 # 配置日志
 logging.basicConfig(
@@ -83,8 +84,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 挂载业务路由
+# 挂载业务路由与 DSH Format-1 插件市场公共索引
 app.include_router(api_router, prefix="/api")
+app.include_router(public_market_router)
 
 # 挂载本地持久化静态资源目录
 downloads_dir = settings.resolved_downloads_dir
@@ -111,8 +113,14 @@ if dist_dir.exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa_frontend(request: Request, full_path: str):
-        # 排除 API 请求
-        if full_path.startswith("api/"):
+        # 排除 capability hub 代理路由（直连 8000 时禁止吞掉为 200 index.html）
+        if full_path == "mcp" or full_path.startswith("mcp/") or full_path.startswith("mcp-api/"):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "MCP 能力引擎代理未经过当前端口，请确认通过 Nginx 或 Vite 5173 访问"},
+            )
+        # 排除 API / Market 请求
+        if full_path.startswith("api/") or full_path.startswith("market/"):
             return JSONResponse(status_code=404, content={"detail": "Not Found"})
         target_file = dist_dir / full_path
         if target_file.is_file():

@@ -21,6 +21,15 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000',
         changeOrigin: true
       },
+      '/market': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      },
+      '/npm': {
+        target: 'http://127.0.0.1:4873',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/npm/, '')
+      },
       '/mcp-api/v1': {
         target: 'http://127.0.0.1:8080',
         changeOrigin: true,

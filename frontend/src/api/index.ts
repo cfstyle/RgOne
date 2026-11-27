@@ -1,3 +1,5 @@
+import type { PluginItem, PluginMarketListResponse } from '@/types/mcp'
+
 // 前端统一 API 客户端封装（离线无 CDN，标准 fetch）
 const API_BASE = '/api/v1'
 
@@ -80,6 +82,38 @@ export const api = {
   getGatewayStatus: () => request('/guide/status'),
   getRecommendedInstaller: () => request('/guide/recommended-installer'),
   getCordisPatchUrl: () => `${API_BASE}/guide/cordis-patch-yml`,
+  downloadCordisPatch: async (): Promise<Blob> => {
+    const headers = new Headers()
+    const empToken = getEmployeeToken()
+    if (empToken) {
+      headers.set('Authorization', `Bearer ${empToken}`)
+    }
+    const res = await fetch(`${API_BASE}/guide/cordis-patch-yml`, { headers })
+    if (!res.ok) {
+      throw new Error(`下载补丁失败 (${res.status})`)
+    }
+    return res.blob()
+  },
+
+  // 插件市场 (DSH Plugin Market)
+  getMarketPlugins: (params?: { q?: string; category?: string }) => {
+    const search = new URLSearchParams()
+    if (params?.q) search.set('q', params.q)
+    if (params?.category && params.category !== '全部') search.set('category', params.category)
+    const qs = search.toString()
+    return request<PluginMarketListResponse>(`/market/plugins${qs ? `?${qs}` : ''}`)
+  },
+  getMarketPluginDetail: (id: number) => request<PluginItem>(`/market/plugins/${id}`),
+  recordPluginDownloadHit: (id: number) =>
+    request<{ id: number; downloads: number }>(`/market/plugins/${id}/download-hit`, {
+      method: 'POST',
+    }),
+  getMyPluginSubmissions: () => request<{ items: PluginItem[] }>('/market/my-submissions'),
+  submitPlugin: (formData: FormData) =>
+    request<{ message: string; plugin: PluginItem }>('/market/submissions', {
+      method: 'POST',
+      body: formData,
+    }),
 
   // 统一认证与验证码
   sendVerifyCode: (account: string) =>
@@ -326,6 +360,47 @@ export const api = {
       {
         method: 'POST',
         body: formData,
+      },
+      true
+    ),
+
+  // 管理端：插件市场治理
+  getAdminPlugins: (statusFilter: string = 'all') =>
+    request<{ items: PluginItem[] }>(
+      `/admin/plugins?status_filter=${encodeURIComponent(statusFilter)}`,
+      {},
+      true
+    ),
+  approvePluginVersion: (
+    versionId: number,
+    data: { comment?: string; allow_lifecycle_scripts?: boolean }
+  ) =>
+    request<{ message: string; publish_status: string; plugin: PluginItem }>(
+      `/admin/plugins/versions/${versionId}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      true
+    ),
+  rejectPluginVersion: (versionId: number, comment: string) =>
+    request<{ message: string; plugin: PluginItem }>(
+      `/admin/plugins/versions/${versionId}/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ comment }),
+      },
+      true
+    ),
+  updateAdminPlugin: (
+    pluginId: number,
+    data: { status?: string; sort_weight?: number; category?: string; display_name?: string }
+  ) =>
+    request<PluginItem>(
+      `/admin/plugins/${pluginId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
       },
       true
     ),

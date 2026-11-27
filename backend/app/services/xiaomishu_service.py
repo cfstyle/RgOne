@@ -3,7 +3,7 @@ import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 import httpx
 from sqlalchemy.orm import Session
 
@@ -49,6 +49,63 @@ class XiaomishuService:
                 logger.warning(f"读取数据库小秘书配置异常: {e}")
 
         return api_url, send_user, source
+
+    @classmethod
+    async def send_notification(
+        cls,
+        db: Session,
+        touser: str,
+        lines: List[str],
+    ) -> Tuple[bool, str]:
+        """通用小秘书文本通知投递方法"""
+        api_url, _, _ = cls._get_config(db)
+        if not api_url:
+            return False, "系统尚未配置小秘书消息推送接口，请联系系统管理员维护"
+
+        payload = {
+            "touser": touser.strip(),
+            "content": "\n".join(lines),
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.post(api_url, json=payload)
+                if resp.status_code != 200:
+                    logger.error(f"小秘书推送接口返回非 200 HTTP 状态: {resp.status_code}")
+                    return False, f"小秘书服务响应异常 (HTTP {resp.status_code})，请稍后重试"
+
+                content_type = resp.headers.get("content-type", "")
+                res_data = resp.json() if "application/json" in content_type else {}
+                if isinstance(res_data, dict):
+                    if res_data.get("errcode") and res_data.get("errcode") != 0:
+                        logger.error(f"小秘书推送业务错误: errcode={res_data.get('errcode')}")
+                        return False, f"小秘书推送失败: {res_data.get('errmsg') or '业务接口拒绝'}"
+                    if res_data.get("success") is False:
+                        logger.error("小秘书推送业务 success 字段为 False")
+                        return False, f"小秘书推送失败: {res_data.get('message') or '业务执行失败'}"
+
+        except Exception as e:
+            logger.error(f"调用小秘书推送服务网络异常: {str(e)}")
+            return False, "连接小秘书推送服务失败，请检查网络或稍后重试"
+
+        return True, "ok"
+
+    @classmethod
+    async def notify_users(cls, db: Session, recipients: List[str], lines: List[str]) -> None:
+        """向多名员工发送非阻塞小秘书提醒（配置缺失或单人发送失败时仅记告警）"""
+        api_url, _, source = cls._get_config(db)
+        if not api_url or not recipients:
+            return
+        now_str = datetime.utcnow().replace(tzinfo=timezone.utc).astimezone(
+            timezone(timedelta(hours=8))
+        ).strftime("%Y-%m-%d %H:%M:%S")
+        full_lines = [f"时间: {now_str}", f"来源: {source}", *lines]
+        for target in recipients:
+            if not target.strip():
+                continue
+            ok, msg = await cls.send_notification(db, target.strip(), full_lines)
+            if not ok:
+                logger.warning("向 %s 推送小秘书通知失败: %s", target, msg)
 
     @classmethod
     async def send_verification_code(
@@ -108,34 +165,10 @@ class XiaomishuService:
             f"【One 大模型服务平台】{greeting}您好，您的登录验证码为: {code}，5 分钟内有效。如非本人操作请忽略此提醒。"
         ]
 
-        payload = {
-            "touser": touser,
-            "content": "\n".join(content)
-        }
-
         logger.info(f"正在向小秘书网关请求验证码推送: touser={touser}")
-
-        # 调用推送接口，严格检查响应状态
-        try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                resp = await client.post(api_url, json=payload)
-                if resp.status_code != 200:
-                    logger.error(f"小秘书推送接口返回非 200 HTTP 状态: {resp.status_code}")
-                    return False, f"小秘书服务响应异常 (HTTP {resp.status_code})，请稍后重试"
-
-                content_type = resp.headers.get("content-type", "")
-                res_data = resp.json() if "application/json" in content_type else {}
-                if isinstance(res_data, dict):
-                    if res_data.get("errcode") and res_data.get("errcode") != 0:
-                        logger.error(f"小秘书推送业务错误: errcode={res_data.get('errcode')}")
-                        return False, f"小秘书推送失败: {res_data.get('errmsg') or '业务接口拒绝'}"
-                    if res_data.get("success") is False:
-                        logger.error("小秘书推送业务 success 字段为 False")
-                        return False, f"小秘书推送失败: {res_data.get('message') or '业务执行失败'}"
-
-        except Exception as e:
-            logger.error(f"调用小秘书推送服务网络异常: {str(e)}")
-            return False, "连接小秘书推送服务失败，请检查网络或稍后重试"
+        ok, err_msg = await cls.send_notification(db, touser, content)
+        if not ok:
+            return False, err_msg
 
         # 推送服务确认成功后，将安全哈希及过期时间落库
         code_hash = cls._hash_code(emp_no, code)

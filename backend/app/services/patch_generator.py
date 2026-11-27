@@ -9,12 +9,20 @@ from backend.app.services.new_api_client import new_api_client
 
 
 class PatchGenerator:
-    """动态生成 DeepSeek Harness 客户端专用配置补丁 cordis.patch.yml"""
+    """动态生成 DeepSeek Harness 客户端专用四合一配置补丁 cordis.patch.yml"""
 
     @classmethod
-    async def generate_cordis_patch_yaml(cls, db: Session, api_key: Optional[str] = None) -> str:
+    async def generate_cordis_patch_yaml(
+        cls,
+        db: Session,
+        api_key: Optional[str] = None,
+        public_base_url: str = "",
+        mcp_url: Optional[str] = None,
+        mcp_token: Optional[str] = None,
+    ) -> str:
         """
-        实时读取当前网关配置与可用模型列表，构造标准 cordis.patch.yml 格式
+        实时读取当前网关配置与可用模型列表，构造标准四合一 cordis.patch.yml：
+        模型接入 + 界面体验 + 离线插件市场 + MCP 网关
         """
         # 读取配置项
         s_url = db.query(SystemSetting).filter(SystemSetting.key == "new_api_base_url").first()
@@ -48,7 +56,7 @@ class PatchGenerator:
                 "input": inputs,
             })
 
-        patch_structure = [
+        patch_structure: List[Dict[str, Any]] = [
             {
                 "id": "session-log-deepseek",
                 "name": "@deepseek-ai/dsh-session-log-deepseek",
@@ -90,6 +98,34 @@ class PatchGenerator:
                     "model": default_model if default_model in model_ids else model_ids[0],
                 },
             })
+
+        resolved_base = (public_base_url or settings.RGONE_PUBLIC_URL or "http://127.0.0.1:8000").strip().rstrip("/")
+        resolved_mcp_url = (mcp_url or f"{resolved_base}/mcp").strip()
+        resolved_token = (mcp_token or "").strip() or "<YOUR_MCP_TOKEN>"
+
+        patch_structure.append({
+            "id": "plugin-market",
+            "name": "@deepseek-ai/dsh-plugin-market",
+            "config": {
+                "registry": f"{resolved_base}/npm",
+                "marketUrl": f"{resolved_base}/market/index.json",
+            },
+        })
+        patch_structure.append({
+            "id": "mcp-client",
+            "name": "@deepseek-ai/dsh-mcp-client",
+            "config": {
+                "servers": {
+                    "rgone-hub": {
+                        "transport": "streamable-http",
+                        "url": resolved_mcp_url,
+                        "headers": {
+                            "Authorization": f"Bearer {resolved_token}",
+                        },
+                    }
+                }
+            },
+        })
 
         # 序列化为规范 YAML
         yaml_content = yaml.safe_dump(

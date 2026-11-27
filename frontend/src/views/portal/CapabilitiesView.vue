@@ -40,6 +40,7 @@ import AdaptiveModal from '@/components/m3/AdaptiveModal.vue'
 import MdButton from '@/components/m3/MdButton.vue'
 import MdCard from '@/components/m3/MdCard.vue'
 import MdDrawer from '@/components/m3/MdDrawer.vue'
+import MdSwitch from '@/components/m3/MdSwitch.vue'
 import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import { copyToClipboard } from '@/utils/clipboard'
@@ -54,6 +55,7 @@ import {
   getPortalMyRequests,
   getPortalOverview,
   isMcpEngineUnavailable,
+  togglePortalServiceEnabled,
   unbindPortalServiceBinding,
   updatePortalServiceBinding,
 } from '@/api/mcp'
@@ -139,6 +141,7 @@ const submittingEditBinding = ref(false)
 
 // 接入指引弹窗
 const guideModalVisible = ref(false)
+const togglingServiceIds = ref<Set<string>>(new Set())
 
 let activeAbortController: AbortController | null = null
 
@@ -722,6 +725,35 @@ function openAccessModalFromDetail() {
   handleAccessClick(cap)
 }
 
+async function handleToggleServiceEnabled(serviceId: string, enabled: boolean) {
+  if (!isLoggedIn.value) {
+    toast.info('调整个人 MCP 装配开关需先登录小秘书工号')
+    openEmployeeLogin()
+    return
+  }
+  const nextBusy = new Set(togglingServiceIds.value)
+  nextBusy.add(serviceId)
+  togglingServiceIds.value = nextBusy
+  try {
+    const res = await togglePortalServiceEnabled(serviceId, enabled)
+    const cap = capabilities.value.find((item) => item.id === serviceId)
+    if (cap) cap.user_enabled = res.user_enabled
+    const myItem = myMcpsList.value.find((item) => item.service_id === serviceId)
+    if (myItem) myItem.user_enabled = res.user_enabled
+    toast.success(
+      res.user_enabled
+        ? '已为当前账号开启该 MCP 服务装配'
+        : '已为当前账号关闭该 MCP 服务装配（重启/刷新工具生效）'
+    )
+  } catch (err: unknown) {
+    toast.error(getMcpErrorMessage(err, '更新装配开关失败'))
+  } finally {
+    const doneBusy = new Set(togglingServiceIds.value)
+    doneBusy.delete(serviceId)
+    togglingServiceIds.value = doneBusy
+  }
+}
+
 async function copyText(text: string, label = '内容') {
   const ok = await copyToClipboard(text)
   if (ok) {
@@ -1058,6 +1090,17 @@ onBeforeUnmount(() => {
               <span v-if="cap.call_count > 0">累计调用 <strong>{{ cap.call_count }}</strong> 次</span>
               <span v-else>新上线</span>
             </div>
+          </div>
+
+          <div class="cap-assembly-row">
+            <span class="assembly-label">
+              个人装配开关：{{ cap.user_enabled !== false ? '已启用' : '已停用' }}
+            </span>
+            <MdSwitch
+              :model-value="cap.user_enabled !== false"
+              :disabled="togglingServiceIds.has(cap.id)"
+              @update:model-value="(val) => handleToggleServiceEnabled(cap.id, val)"
+            />
           </div>
 
           <div class="cap-card__footer">
@@ -1584,9 +1627,16 @@ onBeforeUnmount(() => {
               <strong>{{ item.service_name }}</strong>
               <span class="req-id-tag mono">{{ item.service_id }}</span>
             </div>
-            <span class="mcp-status-pill" :class="`tone-${getMyMcpStatusTone(item)}`">
-              {{ getMyMcpStatusLabel(item) }}
-            </span>
+            <div class="my-mcp-header-right">
+              <span class="mcp-status-pill" :class="`tone-${getMyMcpStatusTone(item)}`">
+                {{ getMyMcpStatusLabel(item) }}
+              </span>
+              <MdSwitch
+                :model-value="item.user_enabled !== false"
+                :disabled="togglingServiceIds.has(item.service_id)"
+                @update:model-value="(val) => handleToggleServiceEnabled(item.service_id, val)"
+              />
+            </div>
           </div>
 
           <div class="my-mcp-tools">
@@ -2929,5 +2979,26 @@ onBeforeUnmount(() => {
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.cap-assembly-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--md-sys-shape-corner-small);
+  background-color: var(--md-sys-color-surface-container-low);
+}
+
+.assembly-label {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.my-mcp-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 </style>

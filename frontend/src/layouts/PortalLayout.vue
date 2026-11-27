@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Compass,
   Blocks,
+  Puzzle,
 } from 'lucide-vue-next'
 import { useThemeStore } from '@/stores/theme'
 import { useAuthStore } from '@/stores/auth'
@@ -29,6 +30,7 @@ const loginDefaultMode = ref<'employee' | 'admin'>('employee')
 const navItems = [
   { label: '快速上手', path: '/', icon: Compass },
   { label: '能力中心 (MCP)', path: '/capabilities', icon: Blocks },
+  { label: '插件市场', path: '/plugins', icon: Puzzle },
   { label: '我的工作台', path: '/workspace', icon: LayoutDashboard },
   { label: '下载中心', path: '/downloads', icon: Download },
   { label: '案例广场', path: '/articles', icon: BookOpen },

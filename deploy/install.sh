@@ -76,7 +76,7 @@ if [[ "${1:-}" == app ]]; then
     exit 0
 fi
 
-for component in python nginx app; do
+for component in python nginx verdaccio app; do
     (cd -- "incoming/$component" && sha256sum -c SHA256SUMS)
 done
 
@@ -169,7 +169,7 @@ if [[ ! -e .env ]]; then
     unset admin_password admin_password_confirmation
 fi
 
-for component in python nginx app; do
+for component in python nginx verdaccio app; do
     docker image load -i "incoming/$component/image.tar"
 done
 
@@ -178,6 +178,11 @@ for config in compose.yaml nginx.conf; do
         cp -- "incoming/app/$config" "$config"
     fi
 done
+
+mkdir -p -- verdaccio
+if [[ ! -e verdaccio/config.yaml && -f incoming/app/verdaccio/config.yaml ]]; then
+    cp -- incoming/app/verdaccio/config.yaml verdaccio/config.yaml
+fi
 
 if grep -Fxq '    working_dir: /srv/rgone/current' compose.yaml; then
     changes=(-e 's|^    working_dir: /srv/rgone/current$|    working_dir: /|')
@@ -233,12 +238,15 @@ fi
 export RGONE_PORT="$port"
 
 "${compose[@]}" config --quiet
-mkdir -p -- data
+mkdir -p -- data/verdaccio/storage
 docker run --rm --pull=never --network none --user 0 \
     --mount "type=bind,src=$PWD/data,dst=/data" --entrypoint /bin/sh rgone-app:latest -ec '
         entries="$(ls -A /data)"
-        if [ -z "$entries" ]; then
+        if [ -z "$entries" ] || [ "$(ls -A /data)" = "verdaccio" ]; then
             chown 10001:10001 /data
+        fi
+        if [ -z "$(ls -A /data/verdaccio/storage 2>/dev/null || true)" ]; then
+            chown -R 10001:10001 /data/verdaccio
         fi
     '
 "${compose[@]}" run --rm --no-deps -T --entrypoint /bin/sh app-release -ec '

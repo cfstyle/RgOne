@@ -5,14 +5,14 @@ fi
 set -euo pipefail
 
 usage() {
-    echo "Usage: bash deploy/export-images.sh [app|all|python|nginx] [linux/amd64|linux/arm64]"
+    echo "Usage: bash deploy/export-images.sh [app|all|python|nginx|verdaccio] [linux/amd64|linux/arm64]"
 }
 
 mode="${1:-app}"
 case "$mode" in
     -h|--help) usage; exit 0 ;;
-    all) components=(python nginx app) ;;
-    app|python|nginx) components=("$mode") ;;
+    all) components=(python nginx verdaccio app) ;;
+    app|python|nginx|verdaccio) components=("$mode") ;;
     *) usage >&2; exit 2 ;;
 esac
 platform="${2:-linux/amd64}"
@@ -65,6 +65,7 @@ trap cleanup EXIT
 arch="${platform#linux/}"
 python_image="${RGONE_PYTHON_IMAGE:-python:3.11-slim-bookworm}"
 nginx_image="${RGONE_NGINX_IMAGE:-nginx:1.28-alpine}"
+verdaccio_image="${RGONE_VERDACCIO_IMAGE:-verdaccio/verdaccio:5}"
 app_image=rgone-app:latest
 build_args=(--build-arg "PY311_BASE_IMAGE=$python_image")
 if [[ -n "${RGONE_PIP_INDEX_URL:-}" ]]; then
@@ -114,6 +115,10 @@ for component in "${components[@]}"; do
             image="$nginx_image"
             prepare_image "$image"
             ;;
+        verdaccio)
+            image="$verdaccio_image"
+            prepare_image "$image"
+            ;;
         app)
             image="$app_image"
             if [[ "$local_images" == 1 ]]; then
@@ -128,10 +133,12 @@ for component in "${components[@]}"; do
                 DOCKER_BUILDKIT=0 DOCKER_DEFAULT_PLATFORM= docker build \
                     "${build_args[@]}" --tag "$image" .
             fi
+            mkdir -p -- "$payload/verdaccio"
             cp -- compose.yaml .env.docker.example deploy/nginx.conf docs/DEPLOYMENT.md "$payload/"
-            printf '\nRGONE_PYTHON_IMAGE=%s\nRGONE_NGINX_IMAGE=%s\n' "$python_image" "$nginx_image" \
-                >> "$payload/.env.docker.example"
-            package_files+=(compose.yaml .env.docker.example nginx.conf DEPLOYMENT.md)
+            cp -- deploy/verdaccio/config.yaml "$payload/verdaccio/config.yaml"
+            printf '\nRGONE_PYTHON_IMAGE=%s\nRGONE_NGINX_IMAGE=%s\nRGONE_VERDACCIO_IMAGE=%s\n' \
+                "$python_image" "$nginx_image" "$verdaccio_image" >> "$payload/.env.docker.example"
+            package_files+=(compose.yaml .env.docker.example nginx.conf DEPLOYMENT.md verdaccio/config.yaml)
             if [[ "$mode" == app ]]; then
                 cp -- deploy/install.sh "$payload/"
                 package_files+=(install.sh)

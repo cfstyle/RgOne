@@ -1,12 +1,16 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
+from backend.app.api.deps import get_optional_employee
+from backend.app.core.config import settings
 from backend.app.core.database import get_db
+from backend.app.models.employee import Employee
 from backend.app.models.shared_file import SharedFile
+from backend.app.services.hub_client import CapabilityHubClient
 from backend.app.services.new_api_client import new_api_client
 from backend.app.services.patch_generator import PatchGenerator
-from fastapi.responses import PlainTextResponse
 
 router = APIRouter(prefix="/guide", tags=["接入向导与公共网关信息"])
 
@@ -76,12 +80,47 @@ def get_recommended_installer(db: Session = Depends(get_db)):
     }
 
 
+def _resolve_public_base_url(request: Request) -> str:
+    if settings.RGONE_PUBLIC_URL and settings.RGONE_PUBLIC_URL.strip():
+        return settings.RGONE_PUBLIC_URL.strip().rstrip("/")
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
+    host = (
+        request.headers.get("x-forwarded-host")
+        or request.headers.get("host")
+        or request.url.netloc
+        or "127.0.0.1:8000"
+    )
+    return f"{proto}://{host}".rstrip("/")
+
+
 @router.get("/cordis-patch-yml", summary="下载动态生成的 cordis.patch.yml 客户端补丁文件")
-async def download_cordis_patch(db: Session = Depends(get_db)):
+async def download_cordis_patch(
+    request: Request,
+    db: Session = Depends(get_db),
+    employee: Optional[Employee] = Depends(get_optional_employee),
+):
     """
-    根据当前网关所有在线模型与配置，动态渲染包含遥测关闭、模型映射与 Agent 默认值的补丁文件
+    根据当前网关所有在线模型与配置，动态渲染包含遥测关闭、模型映射、插件市场与 MCP 网关的四合一补丁文件
     """
-    yaml_text = await PatchGenerator.generate_cordis_patch_yaml(db)
+    public_base = _resolve_public_base_url(request)
+    mcp_token: Optional[str] = None
+    mcp_url: Optional[str] = None
+
+    if employee is not None and CapabilityHubClient.is_configured():
+        ok, issued_token, issued_gw_url, _ = await CapabilityHubClient.issue_ide_token(
+            employee.emp_no
+        )
+        if ok and issued_token:
+            mcp_token = issued_token
+            if issued_gw_url:
+                mcp_url = issued_gw_url
+
+    yaml_text = await PatchGenerator.generate_cordis_patch_yaml(
+        db,
+        public_base_url=public_base,
+        mcp_url=mcp_url,
+        mcp_token=mcp_token,
+    )
     return PlainTextResponse(
         content=yaml_text,
         media_type="application/x-yaml",

@@ -267,6 +267,7 @@ export interface UserMcpDetail {
   credential_version: number
   approved_tools: string[]
   pending_tools: string[]
+  user_enabled?: boolean
   updated_at?: string
 }
 
@@ -282,6 +283,7 @@ export interface PortalCapabilityCard {
   auth_guide?: string
   auth_entry_url?: string
   credential_schema?: ServiceCredentialSchema | null
+  user_enabled?: boolean
   call_count: number
   recent_calls_7d: number
   last_active_at: string | null
@@ -394,3 +396,55 @@ export interface McpBindingResponse {
   message?: string
   credential_status?: CredentialStatus
 }
+
+export interface McpToggleResponse {
+  status: string
+  service_id: string
+  user_enabled: boolean
+  updated_at?: string
+}
+
+export interface PluginVersionItem {
+  id: number
+  plugin_id: number
+  version: string
+  tarball_sha256: string
+  package_json: Record<string, unknown>
+  changelog: string
+  submit_source: 'tgz' | 'git' | string
+  review_status: 'pending' | 'approved' | 'rejected' | string
+  has_lifecycle_scripts: boolean
+  reviewed_by: string
+  review_comment: string
+  published_at?: string | null
+  created_at?: string | null
+}
+
+export interface PluginItem {
+  id: number
+  name: string
+  display_name: string
+  description: string
+  category: string
+  tags: string[]
+  icon: string
+  author_emp_no: string
+  author_name: string
+  repo_url: string
+  status: 'pending' | 'published' | 'rejected' | 'deprecated' | string
+  latest_version: string
+  downloads: number
+  sort_weight: number
+  install_command?: string
+  created_at?: string | null
+  updated_at?: string | null
+  versions?: PluginVersionItem[]
+}
+
+export interface PluginMarketListResponse {
+  registry: string
+  market_url: string
+  categories: string[]
+  items: PluginItem[]
+}
+

@@ -9,6 +9,7 @@ from backend.app.api.v1.files import router as files_router
 from backend.app.api.v1.admin_employees import router as admin_employees_router
 from backend.app.api.v1.admin_tokens import router as admin_tokens_router
 from backend.app.api.v1.articles import router as articles_router
+from backend.app.api.v1.market import admin_plugins_router, portal_market_router
 
 api_router = APIRouter(prefix="/v1")
 api_router.include_router(auth_router)
@@ -17,6 +18,8 @@ api_router.include_router(usage_router)
 api_router.include_router(guide_router)
 api_router.include_router(files_router)
 api_router.include_router(articles_router)
+api_router.include_router(portal_market_router)
 api_router.include_router(admin_router)
 api_router.include_router(admin_employees_router)
 api_router.include_router(admin_tokens_router)
+api_router.include_router(admin_plugins_router)

@@ -63,7 +63,28 @@ const installer = ref<InstallerData | null>(null)
 
 // 复制状态记录
 const copiedField = ref<string>('')
+const downloadingPatch = ref(false)
 let copyFeedback: ReturnType<typeof setTimeout> | undefined
+
+async function handleDownloadPatch() {
+  if (downloadingPatch.value) return
+  downloadingPatch.value = true
+  try {
+    const blob = await api.downloadCordisPatch()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'cordis.patch.yml'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (err: unknown) {
+    console.error('下载 cordis.patch.yml 失败:', err)
+  } finally {
+    downloadingPatch.value = false
+  }
+}
 
 async function copyText(text: string, fieldKey: string) {
   if (!text) return
@@ -498,10 +519,21 @@ onMounted(() => {
                   <div class="p-desc-content">
                     <strong>点击下载补丁文件：</strong>
                     <div style="margin-top: 8px">
-                      <a :href="api.getCordisPatchUrl()" class="patch-dl-btn md-state-layer">
+                      <button
+                        type="button"
+                        class="patch-dl-btn md-state-layer"
+                        :disabled="downloadingPatch"
+                        @click="handleDownloadPatch"
+                      >
                         <Download :size="15" />
-                        <span>下载最新 cordis.patch.yml (包含最新模型目录)</span>
-                      </a>
+                        <span>{{
+                          downloadingPatch
+                            ? '正在生成四合一补丁...'
+                            : authStore.isEmployeeLoggedIn
+                              ? '下载我的专属 cordis.patch.yml (模型 + 插件市场 + MCP Token)'
+                              : '下载最新 cordis.patch.yml (包含模型与插件市场配置)'
+                        }}</span>
+                      </button>
                     </div>
                   </div>
                 </div>

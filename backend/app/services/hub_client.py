@@ -52,3 +52,41 @@ class CapabilityHubClient:
         except Exception as exc:
             logger.warning("同步员工 %s 状态至 Capability Hub 失败: %s", emp_no, exc)
             return False, str(exc)
+
+    @classmethod
+    async def issue_ide_token(
+        cls,
+        emp_no: str,
+    ) -> Tuple[bool, Optional[str], Optional[str], str]:
+        """向 Capability Hub 换取指定员工的 ide-client 长效 MCP Token（严格由 Hub 独立密钥签发）"""
+        base_url = (settings.CAPABILITY_HUB_BASE_URL or "").strip().rstrip("/")
+        if not base_url:
+            return False, None, None, "not_configured"
+
+        secret = (settings.CAPABILITY_HUB_INTERNAL_SECRET or "").strip()
+        if not secret:
+            return False, None, None, "未配置 CAPABILITY_HUB_INTERNAL_SECRET"
+
+        url = f"{base_url}/api/v1/internal/users/{emp_no.strip()}/ide-token"
+        headers = {"X-Internal-Secret": secret}
+
+        try:
+            async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
+                resp = await client.post(url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return (
+                        True,
+                        data.get("token"),
+                        data.get("gateway_url"),
+                        "issued",
+                    )
+                detail: Optional[str] = None
+                try:
+                    detail = resp.json().get("detail")
+                except Exception:
+                    detail = resp.text[:200]
+                return False, None, None, f"HTTP {resp.status_code}: {detail or 'Hub 拒绝签发'}"
+        except Exception as exc:
+            logger.warning("向 Capability Hub 换取员工 %s MCP Token 失败: %s", emp_no, exc)
+            return False, None, None, str(exc)

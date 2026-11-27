@@ -1,0 +1,40 @@
+# 纯离线 Verdaccio 私有 npm Registry 配置（禁止访问公网）
+storage: /verdaccio/storage/data
+
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    max_users: -1
+    algorithm: bcrypt
+
+uplinks: {}
+
+packages:
+  '@rgone/*':
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+  '@deepseek-ai/*':
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+  '**':
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+
+server:
+  keepAliveTimeout: 60
+
+url_prefix: /npm/
+
+middlewares:
+  audit:
+    enabled: true
+
+logs:
+  type: stdout
+  format: pretty
+  level: info
+
+listen: 0.0.0.0:4873

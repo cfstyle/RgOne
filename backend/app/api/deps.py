@@ -67,6 +67,29 @@ async def get_current_employee(
     return employee
 
 
+async def get_optional_employee(
+    auth: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
+    db: Session = Depends(get_db),
+) -> Optional[Employee]:
+    """可选员工鉴权：未登录或 Token 无效时优雅返回 None，不抛 401"""
+    if not auth or not auth.credentials:
+        return None
+    try:
+        payload = decode_access_token(auth.credentials)
+    except Exception:
+        return None
+    if not payload or payload.get("role") != "employee":
+        return None
+    emp_no = payload.get("sub")
+    if not emp_no:
+        return None
+    return (
+        db.query(Employee)
+        .filter(Employee.emp_no == emp_no, Employee.is_active.is_(True))
+        .first()
+    )
+
+
 async def get_current_admin(
     auth: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
     db: Session = Depends(get_db)

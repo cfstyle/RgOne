@@ -14,6 +14,7 @@ import {
   Sun,
   Moon,
   Blocks,
+  Puzzle,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
@@ -34,6 +35,7 @@ const menuItems = [
   { label: '资料与安装包', path: '/admin/files', icon: Download },
   { label: '案例文章管理', path: '/admin/articles', icon: BookOpen },
   { label: 'MCP 能力治理', path: '/admin/mcp-hub', icon: Blocks },
+  { label: '插件市场治理', path: '/admin/plugins', icon: Puzzle },
   { label: '系统与网关配置', path: '/admin/settings', icon: Settings },
 ]
 

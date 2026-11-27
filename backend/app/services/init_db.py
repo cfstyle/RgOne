@@ -11,6 +11,7 @@ from backend.app.models.employee import Employee
 from backend.app.models.setting import SystemSetting
 from backend.app.models.article import Article
 from backend.app.models.shared_file import SharedFile
+from backend.app.models.plugin import Plugin, PluginVersion
 
 logger = logging.getLogger("init_db")
 

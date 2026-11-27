@@ -7,6 +7,7 @@ import type {
   DashboardSummary,
   McpBindingResponse,
   McpService,
+  McpToggleResponse,
   PermissionRequest,
   PermissionRequestCreate,
   PermissionRequestReview,
@@ -222,7 +223,15 @@ async function mcpFetch<T>(
       return undefined as T
     }
 
-    const contentType = response.headers.get('content-type') || ''
+    const contentType = (response.headers.get('content-type') || '').toLowerCase()
+    if (response.ok && contentType.includes('text/html')) {
+      throw new McpEngineError(
+        '未命中能力引擎代理，请确认通过 Nginx 或 Vite 5173 访问',
+        502,
+        true
+      )
+    }
+
     const payload = contentType.includes('application/json')
       ? await response.json().catch(() => null)
       : await response.text().catch(() => '')
@@ -390,6 +399,20 @@ export function unbindPortalServiceBinding(serviceId: string): Promise<McpBindin
     `/portal/my-mcps/${encodeURIComponent(serviceId)}/binding`,
     {
       method: 'DELETE',
+    }
+  )
+}
+
+export function togglePortalServiceEnabled(
+  serviceId: string,
+  enabled: boolean
+): Promise<McpToggleResponse> {
+  return mcpFetch<McpToggleResponse>(
+    'portal',
+    `/portal/my-mcps/${encodeURIComponent(serviceId)}/toggle`,
+    {
+      method: 'PUT',
+      body: { enabled },
     }
   )
 }

@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     CAPABILITY_HUB_BASE_URL: str = ""
     CAPABILITY_HUB_INTERNAL_SECRET: str = ""
 
+    # 统一对外入口与离线 Verdaccio 插件市场配置
+    RGONE_PUBLIC_URL: str = ""
+    VERDACCIO_URL: str = "http://verdaccio:4873"
+    VERDACCIO_AUTH_TOKEN: str = ""
+    VERDACCIO_AUTH_USERNAME: str = ""
+    VERDACCIO_AUTH_PASSWORD: str = ""
+    PLUGIN_REVIEWER_EMP_NOS: str = ""
+
     # 数据库连接
     DATABASE_URL: str = "sqlite:///./data/app.db"
     DEPLOYMENT_DATA_DIR: Optional[Path] = None
@@ -52,6 +60,7 @@ class Settings(BaseSettings):
     # 存储目录
     STORAGE_DOWNLOADS_DIR: str = "./data/storage/downloads"
     STORAGE_IMAGES_DIR: str = "./data/storage/images"
+    STORAGE_PLUGINS_DIR: str = "./data/storage/plugins"
 
     # 小秘书通知推送接口配置
     XIAOMISHU_API: Optional[str] = ""
@@ -121,6 +130,19 @@ class Settings(BaseSettings):
             p = (BASE_DIR / p).resolve()
         p.mkdir(parents=True, exist_ok=True)
         return p
+
+    @property
+    def resolved_plugins_dir(self) -> Path:
+        data_dir = self.deployment_data_dir
+        p = data_dir / "storage" / "plugins" if data_dir is not None else Path(self.STORAGE_PLUGINS_DIR)
+        if not p.is_absolute():
+            p = (BASE_DIR / p).resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @property
+    def plugin_reviewer_list(self) -> List[str]:
+        return [x.strip() for x in (self.PLUGIN_REVIEWER_EMP_NOS or "").split(",") if x.strip()]
 
 
 settings = Settings()

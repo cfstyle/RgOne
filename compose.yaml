@@ -34,11 +34,21 @@ services:
       PYTHONUNBUFFERED: "1"
       APP_SECRET_KEY: "${APP_SECRET_KEY:?Set APP_SECRET_KEY in .env}"
       JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
+      JWT_ISSUER: "${JWT_ISSUER:-rgone}"
+      CAPABILITY_HUB_BASE_URL: "${CAPABILITY_HUB_BASE_URL:-}"
+      CAPABILITY_HUB_INTERNAL_SECRET: "${CAPABILITY_HUB_INTERNAL_SECRET:-}"
+      RGONE_PUBLIC_URL: "${RGONE_PUBLIC_URL:-}"
+      VERDACCIO_URL: "${VERDACCIO_URL:-http://verdaccio:4873}"
+      VERDACCIO_AUTH_TOKEN: "${VERDACCIO_AUTH_TOKEN:-}"
+      VERDACCIO_AUTH_USERNAME: "${VERDACCIO_AUTH_USERNAME:-}"
+      VERDACCIO_AUTH_PASSWORD: "${VERDACCIO_AUTH_PASSWORD:-}"
+      PLUGIN_REVIEWER_EMP_NOS: "${PLUGIN_REVIEWER_EMP_NOS:-}"
       INIT_ADMIN_PASSWORD: "${INIT_ADMIN_PASSWORD:?Set INIT_ADMIN_PASSWORD in .env}"
       DEPLOYMENT_DATA_DIR: /app/data
       DATABASE_URL: sqlite:////app/data/app.db
       STORAGE_DOWNLOADS_DIR: /app/data/storage/downloads
       STORAGE_IMAGES_DIR: /app/data/storage/images
+      STORAGE_PLUGINS_DIR: /app/data/storage/plugins
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
       interval: 15s
@@ -84,6 +94,25 @@ services:
       - type: bind
         source: ./nginx.conf
         target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - rgone-net
+
+  verdaccio:
+    image: "${RGONE_VERDACCIO_IMAGE:-verdaccio/verdaccio:5}"
+    pull_policy: never
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ./data/verdaccio/storage
+        target: /verdaccio/storage
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./verdaccio/config.yaml
+        target: /verdaccio/conf/config.yaml
         read_only: true
         bind:
           create_host_path: false
