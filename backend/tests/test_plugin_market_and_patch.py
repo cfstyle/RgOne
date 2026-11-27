@@ -243,3 +243,22 @@ def test_cordis_patch_four_in_one_logged_in_and_degraded(client: TestClient, db_
     deg_items = yaml.safe_load(r_deg.text)
     ids_deg = {item["id"]: item for item in deg_items}
     assert ids_deg["mcp-client"]["config"]["servers"]["rgone-hub"]["headers"]["Authorization"] == "Bearer <YOUR_MCP_TOKEN>"
+
+
+def test_nginx_and_verdaccio_proxy_preserve_encoded_scope():
+    """静态配置断言：/npm/ 必须通过 $request_uri 保留 %2f 透传 Verdaccio，禁止 rewrite 解码"""
+    nginx_conf = (BASE_DIR / "deploy" / "nginx.conf").read_text(encoding="utf-8")
+    verdaccio_conf = (BASE_DIR / "deploy" / "verdaccio" / "config.yaml").read_text(encoding="utf-8")
+
+    assert "resolver 127.0.0.11 valid=30s ipv6=off;" in nginx_conf
+    assert "set $rgone_verdaccio verdaccio:4873;" in nginx_conf
+    assert "location ^~ /npm/ {" in nginx_conf
+
+    # 截取整个 location ^~ /npm/ 块（包含内层 if 块）
+    npm_section = nginx_conf.split("location ^~ /npm/ {", 1)[1].split("location ^~ /market/", 1)[0]
+    assert "rewrite " not in npm_section
+    assert '$request_uri ~* "^/npm/(.*)$"' in npm_section
+    assert "proxy_pass http://$rgone_verdaccio/$npm_raw_path;" in npm_section
+
+    assert "url_prefix: /npm/" in verdaccio_conf
+    assert "uplinks: {}" in verdaccio_conf
