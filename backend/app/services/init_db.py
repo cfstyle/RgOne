@@ -2,6 +2,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from sqlalchemy import insert, literal, select, union_all
 from sqlalchemy.orm import Session
 from backend.app.core.config import settings
 from backend.app.core.database import engine, SessionLocal, Base
@@ -12,8 +13,30 @@ from backend.app.models.setting import SystemSetting
 from backend.app.models.article import Article
 from backend.app.models.shared_file import SharedFile
 from backend.app.models.plugin import Plugin, PluginVersion
+from backend.app.models.workbench_tile import WorkbenchTile
 
 logger = logging.getLogger("init_db")
+
+
+def seed_workbench_tiles(db: Session):
+    presets = [
+        ("SQL 调优专家", "分析执行计划与索引策略", "prompt", "Database", "开发",
+         "请结合以下 SQL、表结构和执行计划定位性能瓶颈，给出索引建议、等价改写和验证步骤。\n\n"),
+        ("制度条款提炼", "提取适用范围、关键要求与例外", "prompt", "Shield", "制度",
+         "请根据以下制度原文，按适用范围、责任人、关键要求和例外整理要点，并标注对应条款。\n\n"),
+        ("周报汇报润色", "整理进展、风险和下周计划", "prompt", "FileText", "办公",
+         "请将以下记录整理为简洁的周报，按本周进展、风险与待协调事项、下周计划分组，保留原有事实和数据。\n\n"),
+        ("能力中心 (MCP)", "发现和申请 MCP 服务", "link", "Globe", "工具", "/capabilities"),
+    ]
+    tiles = WorkbenchTile.__table__
+    seeds = union_all(*(
+        select(*(literal(value) for value in (*preset, order)))
+        for order, preset in enumerate(presets)
+    )).subquery()
+    rows = select(*seeds.c).where(~select(tiles.c.id).exists())
+    db.execute(insert(tiles).from_select(
+        ["title", "subtitle", "tile_type", "icon", "category", "payload", "sort_order"], rows
+    ))
 
 
 def seed_demo_employees(db: Session):
@@ -153,6 +176,7 @@ LIMIT 100;
                     except Exception:
                         pass
 
+        seed_workbench_tiles(db)
         db.commit()
 
         # 5. 开发模拟模式且员工表为空时自动注入演示白名单（生产模式绝不注入）

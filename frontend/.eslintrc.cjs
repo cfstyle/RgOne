@@ -40,8 +40,7 @@ module.exports = {
   },
   overrides: [
     {
-      // 仅限制业务视图层（src/views/**），不限制底层 M3 原子组件目录（src/components/m3/**）
-      files: ['src/views/**/*.vue'],
+      files: ['src/views/**/*.vue', 'src/components/workbench/**/*.vue'],
       rules: {
         'vue/no-restricted-html-elements': [
           'error',

@@ -12,7 +12,7 @@ router = APIRouter(prefix="/me/usage", tags=["员工个人用量看板"])
 
 @router.get("/overview", summary="获取员工核心用量 KPI 指标")
 def get_usage_overview(
-    range: str = Query("7d", pattern="^(today|7d|30d|all)$"),
+    range: str = Query("7d", pattern="^(today|month|7d|30d|all)$"),
     current_user: Employee = Depends(get_current_employee),
     db: Session = Depends(get_db)
 ):

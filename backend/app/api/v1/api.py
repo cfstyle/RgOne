@@ -10,6 +10,8 @@ from backend.app.api.v1.admin_employees import router as admin_employees_router
 from backend.app.api.v1.admin_tokens import router as admin_tokens_router
 from backend.app.api.v1.articles import router as articles_router
 from backend.app.api.v1.market import admin_plugins_router, portal_market_router
+from backend.app.api.v1.workbench import admin_router as admin_workbench_router
+from backend.app.api.v1.workbench import router as workbench_router
 
 api_router = APIRouter(prefix="/v1")
 api_router.include_router(auth_router)
@@ -23,3 +25,5 @@ api_router.include_router(admin_router)
 api_router.include_router(admin_employees_router)
 api_router.include_router(admin_tokens_router)
 api_router.include_router(admin_plugins_router)
+api_router.include_router(workbench_router)
+api_router.include_router(admin_workbench_router)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onUnmounted, watch } from 'vue'
+import { watch } from 'vue'
 import { X } from 'lucide-vue-next'
 
 const props = withDefaults(
@@ -34,21 +34,18 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 watch(
   () => props.modelValue,
-  (val) => {
-    if (val) {
-      document.body.style.overflow = 'hidden'
-      window.addEventListener('keydown', handleKeydown)
-    } else {
-      document.body.style.overflow = ''
+  (val, _previous, onCleanup) => {
+    if (!val) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', handleKeydown)
+    onCleanup(() => {
+      document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeydown)
-    }
-  }
+    })
+  },
+  { immediate: true }
 )
-
-onUnmounted(() => {
-  document.body.style.overflow = ''
-  window.removeEventListener('keydown', handleKeydown)
-})
 </script>
 
 <template>

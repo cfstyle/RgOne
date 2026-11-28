@@ -324,7 +324,7 @@ def test_guide_endpoints(client: TestClient):
     assert resp_inst.json()["has_installer"] is False
 
 
-def test_production_clean_init_and_no_overwrite_employee():
+def test_production_clean_init_and_no_overwrite_employee(monkeypatch):
     """
     验收要求 P1:
     - 验证生产模式全新数据库初始化后，绝不自动注入示范员工账号（记录数为 0）
@@ -338,6 +338,7 @@ def test_production_clean_init_and_no_overwrite_employee():
     import backend.app.services.init_db as init_db_mod
     from backend.app.models.employee import Employee
 
+    monkeypatch.setattr(settings, "APP_ENV", "production")
     tmpdir = tempfile.mkdtemp(prefix="rgone_clean_prod_test_")
     db_file = Path(tmpdir) / "prod_clean.db"
 

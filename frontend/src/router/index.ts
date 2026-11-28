@@ -16,6 +16,11 @@ const router = createRouter({
     return false
   },
   routes: [
+    {
+      path: '/embed/workbench',
+      name: 'embed-workbench',
+      component: () => import('@/views/portal/EmbedWorkbenchView.vue'),
+    },
     // 员工门户体系 (Portal Track)
     {
       path: '/',
@@ -96,6 +101,11 @@ const router = createRouter({
           path: 'mcp-hub',
           name: 'admin-mcp-hub',
           component: () => import('@/views/admin/AdminMcpHubView.vue'),
+        },
+        {
+          path: 'workbench',
+          name: 'admin-workbench',
+          component: () => import('@/views/admin/AdminWorkbenchView.vue'),
         },
         {
           path: 'plugins',

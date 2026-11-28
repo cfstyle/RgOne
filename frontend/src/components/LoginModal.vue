@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onUnmounted, nextTick, useId } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   User,
@@ -12,13 +12,14 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-vue-next'
-import { AdaptiveModal } from '@/components/m3'
+import { AdaptiveModal, MdButton } from '@/components/m3'
 import { api } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{
   modelValue: boolean
   defaultMode?: 'employee' | 'admin'
+  employeeOnly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -28,6 +29,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const authStore = useAuthStore()
+const formId = useId()
 
 // 登录模式：'employee' | 'admin'
 const loginMode = ref<'employee' | 'admin'>('employee')
@@ -52,7 +54,9 @@ watch(
   () => props.modelValue,
   (val) => {
     if (val) {
-      if (props.defaultMode) {
+      if (props.employeeOnly) {
+        loginMode.value = 'employee'
+      } else if (props.defaultMode) {
         loginMode.value = props.defaultMode
       }
       resetForm()
@@ -79,7 +83,7 @@ function switchMode(mode: 'employee' | 'admin') {
 function onAccountInput() {
   errorMsg.value = ''
   infoMsg.value = ''
-  if (loginMode.value === 'employee' && account.value.trim().toLowerCase() === 'admin') {
+  if (!props.employeeOnly && loginMode.value === 'employee' && account.value.trim().toLowerCase() === 'admin') {
     infoMsg.value = '检测到管理员账号，可直接切换为管理员密码登录'
   }
 }
@@ -208,13 +212,13 @@ async function handleLogin() {
 <template>
   <AdaptiveModal
     :model-value="modelValue"
-    title="统一登录认证"
+    :title="employeeOnly ? '小秘书登录' : '统一登录认证'"
     max-width="440px"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <div class="unified-login-modal">
       <!-- 极简模式切换 Pill -->
-      <div class="mode-pill-group">
+      <div v-if="!employeeOnly" class="mode-pill-group">
         <button
           type="button"
           class="mode-pill-btn"
@@ -256,7 +260,7 @@ async function handleLogin() {
       </div>
 
       <!-- 表单主体 -->
-      <form class="login-form" @submit.prevent="handleLogin">
+      <form :id="formId" class="login-form" @submit.prevent="handleLogin">
         <!-- 账号 / 工号输入框 -->
         <div class="input-field">
           <label class="input-label">
@@ -327,22 +331,10 @@ async function handleLogin() {
           </div>
         </div>
 
-        <!-- 登录主操作按钮 -->
-        <button
-          type="submit"
-          class="submit-login-btn md-state-layer"
-          :disabled="loading"
-        >
-          <span v-if="loading">正在验证...</span>
-          <template v-else>
-            <span>{{ loginMode === 'admin' ? '进入管理后台' : '工号登录' }}</span>
-            <ArrowRight :size="16" />
-          </template>
-        </button>
       </form>
 
       <!-- 底部辅助切换 -->
-      <div class="modal-footer-hint">
+      <div v-if="!employeeOnly" class="modal-footer-hint">
         <span v-if="loginMode === 'employee'">
           管理员维护请点击
           <button type="button" class="link-switch-btn" @click="switchMode('admin')">
@@ -357,6 +349,12 @@ async function handleLogin() {
         </span>
       </div>
     </div>
+    <template #actions>
+      <MdButton type="submit" :form="formId" :disabled="loading">
+        {{ loading ? '正在验证…' : loginMode === 'admin' ? '进入管理后台' : '工号登录' }}
+        <template #trailingIcon><ArrowRight :size="16" /></template>
+      </MdButton>
+    </template>
   </AdaptiveModal>
 </template>
 
@@ -371,7 +369,7 @@ async function handleLogin() {
 .mode-pill-group {
   display: flex;
   padding: 4px;
-  background-color: #F1F3F5;
+  background-color: var(--md-sys-color-surface-container);
   border-radius: 24px;
   gap: 4px;
 }
@@ -385,7 +383,7 @@ async function handleLogin() {
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 500;
-  color: #5F6368;
+  color: var(--md-sys-color-on-surface-variant);
   background: transparent;
   border: none;
   border-radius: 20px;
@@ -394,21 +392,21 @@ async function handleLogin() {
 }
 
 .mode-pill-btn.active {
-  background: #FFFFFF;
-  color: #1F1F1F;
+  background: var(--md-sys-color-surface-container-lowest);
+  color: var(--md-sys-color-on-surface);
   font-weight: 600;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 4px var(--md-sys-color-outline-variant);
 }
 
 .modal-sub-tip {
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
-  color: #5F6368;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .modal-sub-tip b {
-  color: #1F1F1F;
+  color: var(--md-sys-color-on-surface);
   font-weight: 600;
 }
 
@@ -424,13 +422,13 @@ async function handleLogin() {
 }
 
 .feedback-banner.error {
-  background-color: #FEE2E2;
-  color: #B91C1C;
+  background-color: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
 }
 
 .feedback-banner.info {
-  background-color: #E6F4EA;
-  color: #137333;
+  background-color: var(--sys-status-success-bg);
+  color: var(--sys-status-success-text);
 }
 
 .feedback-icon {
@@ -459,28 +457,28 @@ async function handleLogin() {
 .input-label {
   font-size: 12px;
   font-weight: 600;
-  color: #1F1F1F;
+  color: var(--md-sys-color-on-surface);
 }
 
 .input-wrapper {
   position: relative;
   display: flex;
   align-items: center;
-  background-color: #FFFFFF;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background-color: var(--md-sys-color-surface-container-lowest);
+  border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 12px;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .input-wrapper:focus-within {
-  border-color: #1F1F1F;
-  box-shadow: 0 0 0 2px rgba(31, 31, 31, 0.08);
+  border-color: var(--md-sys-color-on-surface);
+  box-shadow: 0 0 0 2px var(--md-sys-color-outline-variant);
 }
 
 .field-icon {
   position: absolute;
   left: 14px;
-  color: #8C939D;
+  color: var(--md-sys-color-on-surface-variant);
   pointer-events: none;
 }
 
@@ -489,14 +487,14 @@ async function handleLogin() {
   padding: 12px 14px 12px 42px;
   font-family: inherit;
   font-size: 14px;
-  color: #1F1F1F;
+  color: var(--md-sys-color-on-surface);
   background: transparent;
   border: none;
   outline: none;
 }
 
 .m3-native-input::placeholder {
-  color: #8C939D;
+  color: var(--md-sys-color-on-surface-variant);
   font-size: 13px;
 }
 
@@ -519,8 +517,8 @@ async function handleLogin() {
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 500;
-  color: #1F1F1F;
-  background-color: #F1F3F5;
+  color: var(--md-sys-color-on-surface);
+  background-color: var(--md-sys-color-surface-container);
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -529,20 +527,20 @@ async function handleLogin() {
 }
 
 .send-code-btn:hover:not(:disabled) {
-  background-color: #E5E7EB;
+  background-color: var(--md-sys-color-surface-container-high);
 }
 
 .send-code-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  color: #8C939D;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .pwd-toggle-btn {
   padding: 8px 12px;
   background: transparent;
   border: none;
-  color: #8C939D;
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -550,56 +548,26 @@ async function handleLogin() {
 }
 
 .pwd-toggle-btn:hover {
-  color: #1F1F1F;
+  color: var(--md-sys-color-on-surface);
 }
 
 /* 登录主按钮：实心墨黑胶囊 */
-.submit-login-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  padding: 12px 20px;
-  margin-top: 4px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #FFFFFF;
-  background-color: #1F1F1F;
-  border: none;
-  border-radius: 24px;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
-}
 
-.submit-login-btn:hover:not(:disabled) {
-  background-color: #333333;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-}
 
-.submit-login-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
 
-.submit-login-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
 
 /* 底部辅助链接 */
 .modal-footer-hint {
   text-align: center;
   font-size: 12px;
-  color: #8C939D;
+  color: var(--md-sys-color-on-surface-variant);
   padding-top: 4px;
 }
 
 .link-switch-btn {
   background: transparent;
   border: none;
-  color: #1F1F1F;
+  color: var(--md-sys-color-on-surface);
   font-weight: 600;
   text-decoration: underline;
   cursor: pointer;
@@ -608,6 +576,6 @@ async function handleLogin() {
 }
 
 .link-switch-btn:hover {
-  color: #000000;
+  color: var(--md-sys-color-primary);
 }
 </style>

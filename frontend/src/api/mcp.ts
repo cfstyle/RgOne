@@ -42,7 +42,10 @@ export interface McpRequestOptions {
   formData?: FormData
   signal?: AbortSignal
   timeoutMs?: number
+  isolateUnauthorized?: boolean
 }
+
+type WorkbenchRequestOptions = Pick<McpRequestOptions, 'signal' | 'isolateUnauthorized'>
 
 export class McpEngineError extends Error {
   status: number
@@ -206,6 +209,9 @@ async function mcpFetch<T>(
     })
 
     if (response.status === 401) {
+      if (options.isolateUnauthorized) {
+        throw new McpEngineError('MCP 服务认证暂不可用', 401)
+      }
       throw handleUnauthorized(scope)
     }
 
@@ -313,12 +319,13 @@ export function getPortalCapabilities(
 
 export function getPortalCapabilityDetail(
   id: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  isolateUnauthorized?: boolean,
 ): Promise<PortalCapabilityDetail> {
   return mcpFetch<PortalCapabilityDetail>(
     'portal',
     `/portal/capabilities/${encodeURIComponent(id)}`,
-    { signal }
+    { signal, isolateUnauthorized }
   )
 }
 
@@ -367,23 +374,27 @@ export function getPortalMyRequests(
 
 export function getPortalMyMcps(
   probe: boolean = true,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  isolateUnauthorized?: boolean,
 ): Promise<UserMcpDetail[]> {
   return mcpFetch<UserMcpDetail[]>('portal', '/portal/my-mcps', {
     params: { probe },
     signal,
+    isolateUnauthorized,
     timeoutMs: probe ? 30_000 : DEFAULT_TIMEOUT_MS,
   })
 }
 
 export function updatePortalServiceBinding(
   serviceId: string,
-  credentials: Record<string, string>
+  credentials: Record<string, string>,
+  options?: WorkbenchRequestOptions,
 ): Promise<McpBindingResponse> {
   return mcpFetch<McpBindingResponse>(
     'portal',
     `/portal/my-mcps/${encodeURIComponent(serviceId)}/binding`,
     {
+      ...options,
       method: 'POST',
       body: { credentials },
     }
@@ -402,12 +413,14 @@ export function unbindPortalServiceBinding(serviceId: string): Promise<McpBindin
 
 export function togglePortalServiceEnabled(
   serviceId: string,
-  enabled: boolean
+  enabled: boolean,
+  options?: WorkbenchRequestOptions,
 ): Promise<McpToggleResponse> {
   return mcpFetch<McpToggleResponse>(
     'portal',
     `/portal/my-mcps/${encodeURIComponent(serviceId)}/toggle`,
     {
+      ...options,
       method: 'PUT',
       body: { enabled },
     }

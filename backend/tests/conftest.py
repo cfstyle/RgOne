@@ -43,6 +43,7 @@ def test_setup():
     settings.STORAGE_DOWNLOADS_DIR = str(storage_downloads)
     settings.STORAGE_IMAGES_DIR = str(storage_images)
     settings.MOCK_NEW_API = True
+    settings.MOCK_XIAOMISHU_OTP = False
     settings.XIAOMISHU_API = "http://mock-xiaomishu.internal/send"
     settings.XIAOMISHU_SEND_USER = "test_user"
 

@@ -396,10 +396,12 @@ class LogSyncService:
 
     @classmethod
     def get_time_range_filter(cls, time_range: str, tz: Optional[timezone] = None) -> int:
-        """根据 today|7d|30d|all 计算起始时间戳"""
+        """计算统计周期起始时间戳。"""
         now = datetime.now(tz)
-        if time_range == "today":
+        if time_range in ("today", "month"):
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            if time_range == "month":
+                start = start.replace(day=1)
             return int(start.timestamp())
         if time_range == "7d":
             return int(now.timestamp() - 7 * 86400)
@@ -454,7 +456,7 @@ class LogSyncService:
     @classmethod
     def get_user_overview(cls, db: Session, emp_no: str, time_range: str = "7d") -> dict:
         """计算员工在指定周期内的核心 KPI"""
-        start_ts = cls.get_time_range_filter(time_range)
+        start_ts = cls.get_time_range_filter(time_range, tz=SHANGHAI_TIME)
 
         query = db.query(UsageLogCache).filter(UsageLogCache.emp_no == emp_no)
         if start_ts > 0:

@@ -177,12 +177,12 @@ export const useThemeStore = defineStore('theme', () => {
     }
   }
 
-  const setTheme = (theme: ThemeMode) => {
+  const setTheme = (theme: ThemeMode, persist = true) => {
     currentTheme.value = theme
     if (typeof document !== 'undefined') {
       document.documentElement.dataset.theme = theme
     }
-    safeStorage.setItem(THEME_STORAGE_KEY, theme)
+    if (persist) safeStorage.setItem(THEME_STORAGE_KEY, theme)
     applyM3Theme(seedColor.value, theme === 'dark')
   }
 
